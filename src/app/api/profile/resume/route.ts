@@ -4,7 +4,7 @@ import { NextRequest } from "next/server";
 import { readProfile, writeProfile } from "@/lib/store";
 import { appDataDir } from "@/lib/paths";
 import {
-  extractResumeText,
+  extractResumeTextFromBuffer,
   mergeParsedResume,
   parseResumeText,
   parseSummary,
@@ -28,7 +28,8 @@ export async function POST(request: NextRequest) {
   const dir = path.join(appDataDir(), "uploads");
   fs.mkdirSync(dir, { recursive: true });
   const dest = path.join(dir, `${profile.id}-${kind}${ext}`);
-  fs.writeFileSync(dest, Buffer.from(await file.arrayBuffer()));
+  const buffer = Buffer.from(await file.arrayBuffer());
+  fs.writeFileSync(dest, buffer);
 
   if (kind === "cover") {
     profile.coverLetterPath = dest;
@@ -48,6 +49,7 @@ export async function POST(request: NextRequest) {
   }
 
   profile.resumePath = dest;
+  profile.resumeFileName = file.name;
   writeProfile(profile);
 
   if (!shouldParse) {
@@ -55,10 +57,16 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const text = await extractResumeText(dest);
+    const text = await extractResumeTextFromBuffer(buffer, file.name);
+    profile.resumeText = text;
     const parsed = await parseResumeText(text);
     const merged = mergeParsedResume(readProfile(profile.id), parsed);
     merged.resumePath = dest;
+    merged.resumeText = text;
+    merged.resumeFileName = file.name;
+    if (!merged.name || merged.name === "New profile" || merged.name === "Profile") {
+      merged.name = `${merged.firstName} ${merged.lastName}`.trim() || merged.name;
+    }
     writeProfile(merged);
     return Response.json({
       path: dest,

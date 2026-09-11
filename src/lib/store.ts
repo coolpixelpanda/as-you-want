@@ -79,6 +79,8 @@ export type Profile = {
   coverLetter: string;
   additionalInfo: string;
   resumePath: string;
+  resumeText: string;
+  resumeFileName: string;
   tailoredResumePath: string;
   coverLetterPath: string;
   gender: string;
@@ -168,6 +170,8 @@ export function defaultProfile(partial: Partial<Profile> = {}): Profile {
     coverLetter: "",
     additionalInfo: "",
     resumePath: "",
+    resumeText: "",
+    resumeFileName: "",
     tailoredResumePath: "",
     coverLetterPath: "",
     gender: "decline",

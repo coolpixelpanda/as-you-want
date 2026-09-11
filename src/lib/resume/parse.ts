@@ -64,21 +64,21 @@ const ParsedSchema = z.object({
 
 export type ParsedResume = z.infer<typeof ParsedSchema>;
 
-export async function extractResumeText(filePath: string): Promise<string> {
-  const ext = path.extname(filePath).toLowerCase();
-  const buffer = fs.readFileSync(filePath);
+export async function extractResumeTextFromBuffer(buffer: Buffer, filename: string): Promise<string> {
+  const ext = path.extname(filename || "").toLowerCase();
 
-  if (ext === ".txt" || ext === ".rtf") {
-    return buffer.toString("utf8");
+  if (ext === ".txt" || ext === ".rtf" || !ext) {
+    const raw = buffer.toString("utf8");
+    if (raw.trim().length >= 40) return raw;
   }
 
-  if (ext === ".docx") {
+  if (ext === ".docx" || ext === ".doc") {
     const mammoth = await import("mammoth");
     const result = await mammoth.extractRawText({ buffer });
     return result.value || "";
   }
 
-  if (ext === ".pdf") {
+  if (ext === ".pdf" || !ext) {
     const { extractText } = await import("unpdf");
     const { text } = await extractText(new Uint8Array(buffer), { mergePages: true });
     return Array.isArray(text) ? text.join("\n") : text || "";
@@ -87,21 +87,105 @@ export async function extractResumeText(filePath: string): Promise<string> {
   throw new Error("Use a PDF, DOCX, or TXT resume.");
 }
 
+export async function extractResumeText(filePath: string): Promise<string> {
+  const buffer = fs.readFileSync(filePath);
+  return extractResumeTextFromBuffer(buffer, filePath);
+}
+
+function firstMatch(text: string, re: RegExp) {
+  return text.match(re)?.[0] || "";
+}
+
+export function heuristicParse(text: string): ParsedResume {
+  const email = firstMatch(text, /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+  const linkedinUrl = firstMatch(text, /https?:\/\/(?:www\.)?linkedin\.com\/[^\s)]+/i)
+    || (text.match(/linkedin\.com\/in\/[A-Za-z0-9_-]+/i)?.[0]
+      ? `https://${text.match(/linkedin\.com\/in\/[A-Za-z0-9_-]+/i)?.[0]}`
+      : "");
+  const githubUrl = firstMatch(text, /https?:\/\/(?:www\.)?github\.com\/[A-Za-z0-9_-]+/i);
+  const websiteUrl = firstMatch(text, /https?:\/\/(?!www\.linkedin\.com|linkedin\.com|github\.com)[^\s)]+/i);
+  const phone = (firstMatch(text, /(?:\+?1[-.\s]?)?(?:\(?\d{3}\)?[-.\s]?)\d{3}[-.\s]?\d{4}/) || "").replace(/[^\d+]/g, "");
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  const nameLine =
+    lines.find((line) => {
+      if (line.includes("@") || /https?:/i.test(line)) return false;
+      if (line.length > 48 || line.length < 3) return false;
+      const words = line.split(" ").filter((w) => /^[A-Za-z.'-]+$/.test(w));
+      return words.length >= 2 && words.length <= 4;
+    }) || "";
+  const [firstName, ...rest] = nameLine.split(" ");
+  const locationLine =
+    lines.find((line) =>
+      /\b(AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|IA|ID|IL|IN|KS|KY|LA|MA|MD|ME|MI|MN|MO|MS|MT|NC|ND|NE|NH|NJ|NM|NV|NY|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VA|VT|WA|WI|WV|United States|USA)\b/i.test(
+        line,
+      ) && line.length < 80,
+    ) || "";
+
+  return ParsedSchema.parse({
+    firstName: firstName || "",
+    lastName: rest.join(" "),
+    email,
+    phone,
+    locationLine,
+    linkedinUrl,
+    githubUrl,
+    websiteUrl,
+    portfolioUrl: websiteUrl,
+  });
+}
+
+function mergeParsed(base: ParsedResume, overlay: ParsedResume): ParsedResume {
+  const pick = (key: keyof ParsedResume) => {
+    const next = overlay[key];
+    const prev = base[key];
+    if (Array.isArray(next) && next.length) return next;
+    if (Array.isArray(prev)) return prev;
+    return String(next || "").trim() || prev;
+  };
+  return ParsedSchema.parse({
+    firstName: pick("firstName"),
+    lastName: pick("lastName"),
+    preferredName: pick("preferredName"),
+    email: pick("email"),
+    phone: pick("phone"),
+    street: pick("street"),
+    city: pick("city"),
+    state: pick("state"),
+    postalCode: pick("postalCode"),
+    country: pick("country"),
+    locationLine: pick("locationLine"),
+    linkedinUrl: pick("linkedinUrl"),
+    githubUrl: pick("githubUrl"),
+    portfolioUrl: pick("portfolioUrl"),
+    websiteUrl: pick("websiteUrl"),
+    currentCompany: pick("currentCompany"),
+    currentTitle: pick("currentTitle"),
+    summary: pick("summary"),
+    experiences: overlay.experiences?.length ? overlay.experiences : base.experiences,
+    educations: overlay.educations?.length ? overlay.educations : base.educations,
+  });
+}
+
 export async function parseResumeText(text: string): Promise<ParsedResume> {
   const cleaned = text.replace(/\s+\n/g, "\n").trim();
   if (cleaned.length < 40) {
     throw new Error("Could not read enough text from the resume.");
   }
 
-  const openai = getOpenAI();
-  const completion = await openai.chat.completions.create({
-    model: getModel(),
-    temperature: 0,
-    response_format: { type: "json_object" },
-    messages: [
-      {
-        role: "system",
-        content: `Extract a job-applicant profile from a resume. Return JSON only with this shape:
+  const fallback = heuristicParse(cleaned);
+  try {
+    const openai = getOpenAI();
+    const completion = await openai.chat.completions.create({
+      model: getModel(),
+      temperature: 0,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content: `Extract a job-applicant profile from a resume. Return JSON only with this shape:
 {
   "firstName": "",
   "lastName": "",
@@ -131,26 +215,22 @@ Rules:
 - experiences: newest first. current=true if it is the present role. description: 2-6 short sentences or bullet-like lines.
 - currentCompany/currentTitle from the newest current role.
 - URLs must be full https links when you can reconstruct them from the resume.`,
-      },
-      {
-        role: "user",
-        content: cleaned.slice(0, 24000),
-      },
-    ],
-  });
+        },
+        {
+          role: "user",
+          content: cleaned.slice(0, 24000),
+        },
+      ],
+    });
 
-  const raw = completion.choices[0]?.message?.content || "{}";
-  let json: unknown;
-  try {
-    json = JSON.parse(raw);
+    const raw = completion.choices[0]?.message?.content || "{}";
+    const parsed = ParsedSchema.safeParse(JSON.parse(raw));
+    if (!parsed.success) return fallback;
+    return mergeParsed(fallback, parsed.data);
   } catch {
-    throw new Error("OpenAI did not return valid resume JSON.");
+    if (fallback.email || fallback.firstName || fallback.phone) return fallback;
+    throw new Error("Could not parse the resume. Add OPENAI_API_KEY or try a text-based PDF/DOCX.");
   }
-  const parsed = ParsedSchema.safeParse(json);
-  if (!parsed.success) {
-    throw new Error("Could not map the resume into profile fields.");
-  }
-  return parsed.data;
 }
 
 function filled(value: unknown) {

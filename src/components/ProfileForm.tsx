@@ -75,6 +75,7 @@ export function ProfileForm({ profileId }: { profileId?: string }) {
   const [status, setStatus] = useState("");
   const [saving, setSaving] = useState(false);
   const [parsing, setParsing] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
 
   const idQuery = profileId ? `?id=${encodeURIComponent(profileId)}` : "";
 
@@ -180,43 +181,77 @@ export function ProfileForm({ profileId }: { profileId?: string }) {
   return (
     <div className="space-y-8">
       <section className="rounded-2xl border border-line bg-card p-6">
-        <h2 className="font-serif text-2xl">Parse a resume</h2>
+        <h2 className="font-serif text-2xl">Start from a resume</h2>
         <p className="mt-1 text-sm text-muted">
-          Upload a PDF, DOCX, or TXT file. OpenAI reads name, contact, links, experience, and education into this profile.
+          Drop a PDF, DOCX, or TXT resume. We fill name, contact, links, jobs, and schools, then you can edit anything below.
         </p>
         <div className="mt-4">
           <Field label="Profile name">
             <input className={inputClass} value={String(profile.name || "")} onChange={(e) => set("name", e.target.value)} placeholder="e.g. Software engineer — US" />
           </Field>
         </div>
+        <label
+          className={`mt-4 flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed px-4 py-8 text-center ${
+            dragOver ? "border-accent bg-[#f7efe6]" : "border-line bg-paper/70"
+          } ${parsing ? "opacity-70" : ""}`}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragOver(true);
+          }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragOver(false);
+            const file = e.dataTransfer.files?.[0];
+            if (file) void upload("resume", file);
+          }}
+        >
+          {parsing ? <LoaderCircle className="animate-spin text-accent" size={22} /> : <Upload size={22} />}
+          <p className="mt-3 text-sm font-medium">{parsing ? "Reading resume and filling the profile…" : "Drop resume here or click to upload"}</p>
+          <p className="mt-1 text-xs text-muted">
+            {profile.resumeFileName ? `Current file: ${String(profile.resumeFileName)}` : "PDF, DOCX, or TXT"}
+          </p>
+          <input
+            type="file"
+            className="hidden"
+            accept=".pdf,.doc,.docx,.txt,.rtf"
+            disabled={parsing}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (file) void upload("resume", file);
+            }}
+          />
+        </label>
         <div className="mt-4 flex flex-wrap items-center gap-3">
-          <label className="inline-flex h-11 cursor-pointer items-center gap-2 rounded-xl bg-accent px-4 text-sm text-white hover:bg-accent-dark">
-            {parsing ? <LoaderCircle className="animate-spin" size={16} /> : <Upload size={16} />}
-            {parsing ? "Parsing…" : "Upload and parse"}
-            <input
-              type="file"
-              className="hidden"
-              accept=".pdf,.doc,.docx,.txt,.rtf"
-              disabled={parsing}
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                e.target.value = "";
-                if (file) void upload("resume", file);
-              }}
-            />
-          </label>
-          {profile.resumePath ? (
+          {profile.resumePath || profile.resumeText ? (
             <button
               type="button"
               disabled={parsing}
               onClick={() => void reparse()}
               className="h-11 rounded-xl border border-line px-4 text-sm disabled:opacity-50"
             >
-              Parse uploaded resume again
+              Parse again
             </button>
           ) : null}
         </div>
         {status ? <p className="mt-3 text-sm text-muted">{status}</p> : null}
+        {profile.firstName || profile.email ? (
+          <p className="mt-3 text-sm">
+            Autofilled{" "}
+            {[
+              profile.firstName && "name",
+              profile.email && "email",
+              profile.phone && "phone",
+              profile.currentTitle && "title",
+              Array.isArray(experiences) && experiences.some((row) => row.company) && "experience",
+              Array.isArray(educations) && educations.some((row) => row.school) && "education",
+            ]
+              .filter(Boolean)
+              .join(", ")}
+            . Review the fields below, then save.
+          </p>
+        ) : null}
       </section>
 
       <section className="rounded-2xl border border-line bg-card p-6">

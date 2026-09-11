@@ -15,7 +15,7 @@ export default async function EditProfilePage({
       <p className="mt-4 text-sm uppercase tracking-[0.2em] text-muted">Setup</p>
       <h1 className="mt-2 font-serif text-5xl tracking-tight">Applicant profile</h1>
       <p className="mt-3 max-w-xl text-muted">
-        Upload a resume (PDF, DOCX, or TXT). We parse it with OpenAI and fill the fields below.
+        Drop a resume to autofill this profile. You can still edit every field before you save.
       </p>
       <div className="mt-8">
         <ProfileForm profileId={id} />

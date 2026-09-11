@@ -1,4 +1,5 @@
 import { ProfileList } from "@/components/ProfileList";
+import { ResumeStart } from "@/components/ResumeStart";
 
 export default function ProfilesPage() {
   return (
@@ -10,6 +11,7 @@ export default function ProfilesPage() {
         profile you pick in its popup.
       </p>
       <div className="mt-8">
+        <ResumeStart />
         <ProfileList />
       </div>
     </div>
