@@ -1,0 +1,39 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <img class="logo" src="icons/icon48.png" alt="" width="36" height="36" />
+      <div>
+        <p class="brand">JobLink</p>
+        <p class="sub">LinkedIn Easy Apply</p>
+      </div>
+    </header>
+    <label>
+      JobLink server
+      <input id="apiBase" value="http://localhost:3001" />
+    </label>
+    <label>
+      Profile
+      <select id="profileId"></select>
+    </label>
+    <label>
+      Resume to attach
+      <select id="resumeKind">
+        <option value="original">Original resume (from profile)</option>
+        <option value="tailored">Tailored resume (from profile)</option>
+      </select>
+    </label>
+    <label class="check">
+      <input id="autoSubmit" type="checkbox" checked />
+      Review and submit when the form is filled
+    </label>
+    <p id="status" class="status">Open a LinkedIn job, then Easy Apply.</p>
+    <button id="apply" type="button">Easy Apply on this job</button>
+    <p class="hint">Clicks Easy Apply, fills contact info, attaches FirstName_LastName resume, skips optional pages, asks AI for questions, then Review and Submit. Reload (0.5.0).</p>
+    <script src="popup.js"></script>
+  </body>
+</html>

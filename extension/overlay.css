@@ -1,0 +1,79 @@
+#joblink-overlay {
+  position: fixed;
+  z-index: 2147483646;
+  right: 16px;
+  bottom: 16px;
+  width: 280px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: #1c1712;
+  color: #f3eee4;
+  font: 13px/1.45 system-ui, sans-serif;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.28);
+}
+#joblink-overlay strong {
+  display: block;
+  font-family: Georgia, serif;
+  font-style: italic;
+  font-size: 16px;
+  margin-bottom: 6px;
+}
+#joblink-overlay .joblink-log {
+  color: #d7cfc3;
+  max-height: 140px;
+  overflow: auto;
+}
+#joblink-save-modal {
+  position: fixed;
+  z-index: 2147483647;
+  right: 16px;
+  bottom: 180px;
+  width: 320px;
+  padding: 16px;
+  border-radius: 14px;
+  background: #fffdf8;
+  color: #1c1712;
+  font: 13px/1.45 system-ui, sans-serif;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.28);
+  border: 1px solid #e6dccb;
+}
+#joblink-save-modal .joblink-save-kicker {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #6d645a;
+}
+#joblink-save-modal .joblink-save-title {
+  font-family: Georgia, serif;
+  font-style: italic;
+  font-size: 18px;
+  margin: 6px 0 10px;
+}
+#joblink-save-modal .joblink-save-q,
+#joblink-save-modal .joblink-save-a {
+  margin: 0 0 8px;
+}
+#joblink-save-modal .joblink-save-a {
+  color: #c45c26;
+}
+#joblink-save-modal .joblink-save-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+#joblink-save-modal button {
+  flex: 1;
+  height: 36px;
+  border-radius: 10px;
+  border: 0;
+  cursor: pointer;
+  font-weight: 600;
+}
+#joblink-save-modal .joblink-save-yes {
+  background: #c45c26;
+  color: white;
+}
+#joblink-save-modal .joblink-save-no {
+  background: #efe8da;
+  color: #1c1712;
+}
