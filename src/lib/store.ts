@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { appDataDir } from "@/lib/paths";
 import {
   dedupeAnswers,
   deleteAnswer,
@@ -118,10 +119,12 @@ export type Application = {
   updatedAt: string;
 };
 
-const dataDir = path.join(process.cwd(), "data");
-const profileFile = path.join(dataDir, "profile.json");
-const profilesFile = path.join(dataDir, "profiles.json");
-const appsFile = path.join(dataDir, "applications.json");
+function dataDir() {
+  return appDataDir();
+}
+const profileFile = () => path.join(dataDir(), "profile.json");
+const profilesFile = () => path.join(dataDir(), "profiles.json");
+const appsFile = () => path.join(dataDir(), "applications.json");
 
 type ProfileStore = {
   activeId: string;
@@ -129,7 +132,7 @@ type ProfileStore = {
 };
 
 function ensureDir() {
-  fs.mkdirSync(dataDir, { recursive: true });
+  fs.mkdirSync(dataDir(), { recursive: true });
 }
 
 export function defaultProfile(partial: Partial<Profile> = {}): Profile {
@@ -187,10 +190,19 @@ export function defaultProfile(partial: Partial<Profile> = {}): Profile {
 }
 
 function readProfileStore(): ProfileStore {
+  try {
+    return loadProfileStore();
+  } catch {
+    const profile = defaultProfile({ name: "Default profile" });
+    return { activeId: profile.id, profiles: [profile] };
+  }
+}
+
+function loadProfileStore(): ProfileStore {
   ensureDir();
   let store: ProfileStore;
-  if (fs.existsSync(profilesFile)) {
-    const raw = JSON.parse(fs.readFileSync(profilesFile, "utf8")) as ProfileStore;
+  if (fs.existsSync(profilesFile())) {
+    const raw = JSON.parse(fs.readFileSync(profilesFile(), "utf8")) as ProfileStore;
     const profiles = (raw.profiles || []).map((p) => defaultProfile(p));
     const activeId =
       raw.activeId && profiles.some((p) => p.id === raw.activeId)
@@ -203,8 +215,8 @@ function readProfileStore(): ProfileStore {
     } else {
       store = { activeId: activeId || profiles[0].id, profiles };
     }
-  } else if (fs.existsSync(profileFile)) {
-    const old = JSON.parse(fs.readFileSync(profileFile, "utf8")) as Profile;
+  } else if (fs.existsSync(profileFile())) {
+    const old = JSON.parse(fs.readFileSync(profileFile(), "utf8")) as Profile;
     const profile = defaultProfile({
       ...old,
       id: old.id || "me",
@@ -223,7 +235,7 @@ function readProfileStore(): ProfileStore {
 
 function writeProfileStore(store: ProfileStore) {
   ensureDir();
-  fs.writeFileSync(profilesFile, JSON.stringify(store, null, 2));
+  fs.writeFileSync(profilesFile(), JSON.stringify(store, null, 2));
 }
 
 function yesNo(value: string) {
@@ -277,10 +289,14 @@ let answersMigrated = false;
 function migrateAnswersOnce(profiles: Profile[]) {
   if (answersMigrated) return;
   answersMigrated = true;
-  importProfileAnswers(profiles);
-  pruneBareChoiceAnswersDb();
-  for (const profile of profiles) syncDefaultAnswers(profile);
-  dedupeAnswers();
+  try {
+    importProfileAnswers(profiles);
+    pruneBareChoiceAnswersDb();
+    for (const profile of profiles) syncDefaultAnswers(profile);
+    dedupeAnswers();
+  } catch {
+    /* storage can be unavailable on the first serverless boot */
+  }
 }
 
 export function listProfiles() {
@@ -388,16 +404,16 @@ export function resumeDownloadName(profile: Profile, ext: string) {
 
 function readApps(): Application[] {
   ensureDir();
-  if (!fs.existsSync(appsFile)) {
-    fs.writeFileSync(appsFile, "[]");
+  if (!fs.existsSync(appsFile())) {
+    fs.writeFileSync(appsFile(), "[]");
     return [];
   }
-  return JSON.parse(fs.readFileSync(appsFile, "utf8"));
+  return JSON.parse(fs.readFileSync(appsFile(), "utf8"));
 }
 
 function writeApps(apps: Application[]) {
   ensureDir();
-  fs.writeFileSync(appsFile, JSON.stringify(apps, null, 2));
+  fs.writeFileSync(appsFile(), JSON.stringify(apps, null, 2));
 }
 
 export function listApplications() {

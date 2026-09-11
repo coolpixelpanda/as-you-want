@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { NextRequest } from "next/server";
 import { readProfile, writeProfile } from "@/lib/store";
+import { appDataDir } from "@/lib/paths";
 import {
   extractResumeText,
   mergeParsedResume,
@@ -24,7 +25,7 @@ export async function POST(request: NextRequest) {
 
   const profile = readProfile(profileId || undefined);
   const ext = path.extname(file.name) || ".pdf";
-  const dir = path.join(process.cwd(), "data", "uploads");
+  const dir = path.join(appDataDir(), "uploads");
   fs.mkdirSync(dir, { recursive: true });
   const dest = path.join(dir, `${profile.id}-${kind}${ext}`);
   fs.writeFileSync(dest, Buffer.from(await file.arrayBuffer()));

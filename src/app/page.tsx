@@ -6,8 +6,13 @@ import Link from "next/link";
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  const profile = await getProfile();
-  const completeness = profileCompleteness(profile);
+  let completeness = { ready: true, percent: 100, missing: [] as string[] };
+  try {
+    const profile = await getProfile();
+    completeness = profileCompleteness(profile);
+  } catch {
+    completeness = { ready: false, percent: 0, missing: ["profile storage"] };
+  }
 
   return (
     <div className="mx-auto max-w-3xl">
