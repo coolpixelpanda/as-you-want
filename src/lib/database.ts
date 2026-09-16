@@ -19,17 +19,42 @@ import {
   type Profile,
   type SavedAnswer,
 } from "@/lib/store-types";
+import {
+  jsonDeleteAnswer,
+  jsonDeleteApplication,
+  jsonDeleteProfile,
+  jsonGetActiveProfileId,
+  jsonListAnswers,
+  jsonListApplications,
+  jsonListProfiles,
+  jsonLoadBlob,
+  jsonSaveBlob,
+  jsonSetActiveProfile,
+  jsonUpsertAnswer,
+  jsonWriteApplication,
+  jsonWriteProfile,
+} from "@/lib/json-store";
 
 export { usesPostgres };
 export type { StoredFile };
 
+export function usesJsonStore() {
+  return Boolean(process.env.VERCEL) && !usesPostgres();
+}
+
 export function storageMode() {
-  return usesPostgres() ? "postgres" : "sqlite";
+  if (usesPostgres()) return "postgres";
+  if (usesJsonStore()) return "json";
+  return "sqlite";
 }
 
 export async function ensureStorage() {
   if (usesPostgres()) {
     getPrisma();
+    return;
+  }
+  if (usesJsonStore()) {
+    jsonListProfiles();
     return;
   }
   getDb();
@@ -135,6 +160,7 @@ function hasResume(row: { resumePath?: string; resumeFileId?: string; resume_pat
 
 export async function dbListProfiles(): Promise<Profile[]> {
   await ensureStorage();
+  if (usesJsonStore()) return jsonListProfiles();
   if (usesPostgres()) {
     const rows = await getPrisma().profile.findMany({
       include: { experiences: { orderBy: { sortOrder: "asc" } }, educations: { orderBy: { sortOrder: "asc" } }, answers: true },
@@ -171,6 +197,13 @@ function hydrateSqliteProfile(row: Record<string, unknown>): Profile {
 }
 
 export async function dbGetActiveProfileId(): Promise<string> {
+  if (usesJsonStore()) {
+    const profiles = jsonListProfiles();
+    const active = jsonGetActiveProfileId();
+    if (active && profiles.some((row) => row.id === active)) return active;
+    jsonSetActiveProfile(profiles[0].id);
+    return profiles[0].id;
+  }
   const profiles = await dbListProfiles();
   if (!profiles.length) {
     const created = await dbCreateProfile("Default profile");
@@ -189,6 +222,10 @@ export async function dbGetActiveProfileId(): Promise<string> {
 
 export async function dbSetActiveProfile(id: string) {
   await ensureStorage();
+  if (usesJsonStore()) {
+    jsonSetActiveProfile(id);
+    return;
+  }
   if (usesPostgres()) {
     await getPrisma().appMeta.upsert({
       where: { key: "active_profile_id" },
@@ -217,6 +254,13 @@ export async function dbDeleteProfile(id: string) {
   const profiles = await dbListProfiles();
   if (profiles.length <= 1) throw new Error("Keep at least one profile.");
   await ensureStorage();
+  if (usesJsonStore()) {
+    jsonDeleteProfile(id);
+    const next = profiles.filter((row) => row.id !== id);
+    const active = jsonGetActiveProfileId();
+    if (active === id) jsonSetActiveProfile(next[0].id);
+    return;
+  }
   if (usesPostgres()) {
     await getPrisma().profile.delete({ where: { id } });
   } else {
@@ -229,6 +273,10 @@ export async function dbDeleteProfile(id: string) {
 
 export async function dbWriteProfile(profile: Profile) {
   await ensureStorage();
+  if (usesJsonStore()) {
+    jsonWriteProfile(profile);
+    return;
+  }
   const now = new Date().toISOString();
   profile.updatedAt = now;
   if (!profile.name) profile.name = `${profile.firstName} ${profile.lastName}`.trim() || "Profile";
@@ -460,6 +508,7 @@ function sqliteProfileValues(profile: Profile, now: string) {
 
 export async function dbListApplications(): Promise<Application[]> {
   await ensureStorage();
+  if (usesJsonStore()) return jsonListApplications();
   if (usesPostgres()) {
     const rows = await getPrisma().application.findMany({ orderBy: { createdAt: "desc" } });
     return rows as Application[];
@@ -519,6 +568,10 @@ export async function dbCreateApplication(data: Partial<Application>): Promise<A
     ...data,
   };
   await ensureStorage();
+  if (usesJsonStore()) {
+    jsonWriteApplication(app);
+    return app;
+  }
   if (usesPostgres()) {
     await getPrisma().application.create({ data: app });
     return app;
@@ -554,6 +607,10 @@ export async function dbUpdateApplication(id: string, data: Record<string, unkno
   if (!current) return null;
   const next = { ...current, ...data, updatedAt: new Date().toISOString() } as Application;
   await ensureStorage();
+  if (usesJsonStore()) {
+    jsonWriteApplication(next);
+    return next;
+  }
   if (usesPostgres()) {
     const { id: _id, ...rest } = next;
     await getPrisma().application.update({ where: { id }, data: rest });
@@ -587,6 +644,10 @@ export async function dbUpdateApplication(id: string, data: Record<string, unkno
 
 export async function dbDeleteApplication(id: string) {
   await ensureStorage();
+  if (usesJsonStore()) {
+    jsonDeleteApplication(id);
+    return;
+  }
   if (usesPostgres()) {
     await getPrisma().application.delete({ where: { id } }).catch(() => undefined);
     return;
@@ -596,6 +657,7 @@ export async function dbDeleteApplication(id: string) {
 
 export async function dbListAnswers(profileId?: string) {
   await ensureStorage();
+  if (usesJsonStore()) return jsonListAnswers(profileId);
   if (usesPostgres()) {
     const rows = await getPrisma().savedAnswer.findMany({
       where: profileId ? { profileId } : undefined,
@@ -638,6 +700,19 @@ export async function dbUpsertAnswer(row: {
   updatedAt: string;
 }) {
   await ensureStorage();
+  if (usesJsonStore()) {
+    jsonUpsertAnswer({
+      id: row.id || crypto.randomUUID(),
+      profileId: row.profileId,
+      question: row.question,
+      questionNorm: row.questionNorm,
+      answer: row.answer,
+      source: row.source,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    });
+    return;
+  }
   if (usesPostgres()) {
     await getPrisma().savedAnswer.upsert({
       where: { id: row.id || crypto.randomUUID() },
@@ -690,6 +765,10 @@ export async function dbUpsertAnswer(row: {
 
 export async function dbDeleteAnswer(profileId: string, id: string) {
   await ensureStorage();
+  if (usesJsonStore()) {
+    jsonDeleteAnswer(profileId, id);
+    return;
+  }
   if (usesPostgres()) {
     await getPrisma().savedAnswer.deleteMany({ where: { id, profileId } });
     return;
@@ -704,6 +783,7 @@ export async function dbSaveBlob(input: {
   bytes: Buffer;
 }) {
   await ensureStorage();
+  if (usesJsonStore()) return jsonSaveBlob(input);
   if (!usesPostgres()) {
     return saveSqliteBlob(input);
   }
@@ -745,6 +825,7 @@ export async function dbSaveBlob(input: {
 
 export async function dbLoadBlob(profileId: string, kind: string): Promise<StoredFile | null> {
   await ensureStorage();
+  if (usesJsonStore()) return jsonLoadBlob(profileId, kind);
   if (!usesPostgres()) return loadSqliteBlob(profileId, kind);
   const row = await getPrisma().storedFile.findFirst({
     where: { profileId, kind },
