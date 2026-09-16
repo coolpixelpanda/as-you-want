@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Newsreader } from "next/font/google";
 import { AppShell } from "@/components/AppShell";
+import { NoticeProvider } from "@/components/NoticeProvider";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -26,7 +27,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${geistSans.variable} ${newsreader.variable} h-full antialiased`}
     >
       <body className="min-h-full bg-paper text-ink">
-        <AppShell>{children}</AppShell>
+        <NoticeProvider>
+          <AppShell>{children}</AppShell>
+        </NoticeProvider>
       </body>
     </html>
   );

@@ -2,17 +2,22 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { ArrowRight, LoaderCircle } from "lucide-react";
+import { ArrowRight } from "lucide-react";
+import { Button } from "@/components/ui/Button";
+import { useNotice } from "@/components/NoticeProvider";
 
 export function ApplyBox() {
   const router = useRouter();
+  const { notify } = useNotice();
   const [jobUrl, setJobUrl] = useState("");
-  const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError("");
+    if (!jobUrl.trim()) {
+      notify("error", "Paste a job link first.");
+      return;
+    }
     setBusy(true);
     try {
       const res = await fetch("/api/applications", {
@@ -21,10 +26,11 @@ export function ApplyBox() {
         body: JSON.stringify({ jobUrl }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Could not start");
+      if (!res.ok) throw new Error(data.error || "Could not start that application.");
+      notify("success", "Application started.");
       router.push(`/applications/${data.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not start");
+      notify("error", err instanceof Error ? err.message : "Could not start that application.");
       setBusy(false);
     }
   }
@@ -43,18 +49,12 @@ export function ApplyBox() {
           value={jobUrl}
           onChange={(e) => setJobUrl(e.target.value)}
           placeholder="https://job-boards.greenhouse.io/acme/jobs/123"
-          className="h-12 flex-1 rounded-xl border border-line bg-paper px-4 outline-none ring-accent/30 focus:ring-2"
+          className="h-11 flex-1 rounded-xl border border-line bg-paper px-4 outline-none ring-accent/30 focus:ring-2"
         />
-        <button
-          type="submit"
-          disabled={busy || !jobUrl.trim()}
-          className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-accent px-5 font-medium text-white hover:bg-accent-dark disabled:opacity-50"
-        >
-          {busy ? <LoaderCircle className="animate-spin" size={18} /> : <ArrowRight size={18} />}
+        <Button type="submit" variant="accent" icon={ArrowRight} loading={busy} disabled={!jobUrl.trim()}>
           Apply
-        </button>
+        </Button>
       </div>
-      {error ? <p className="mt-3 text-sm text-bad">{error}</p> : null}
     </form>
   );
 }

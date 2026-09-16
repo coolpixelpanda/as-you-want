@@ -1,5 +1,8 @@
 "use client";
 
+import { RotateCcw } from "lucide-react";
+import { Button } from "@/components/ui/Button";
+
 export default function ErrorPage({
   reset,
 }: {
@@ -14,13 +17,9 @@ export default function ErrorPage({
         Reload to try again. On Vercel, set <code>DATABASE_URL</code> to a Postgres database and{" "}
         <code>OPENAI_API_KEY</code> in project environment variables.
       </p>
-      <button
-        type="button"
-        onClick={() => reset()}
-        className="mt-6 h-11 rounded-xl bg-ink px-5 text-paper"
-      >
+      <Button className="mt-6" variant="primary" icon={RotateCcw} onClick={() => reset()}>
         Reload
-      </button>
+      </Button>
     </div>
   );
 }

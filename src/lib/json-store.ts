@@ -34,7 +34,7 @@ function filesDir() {
 function loadState(): JsonState {
   fs.mkdirSync(appDataDir(), { recursive: true });
   if (!fs.existsSync(statePath())) {
-    const profile = defaultProfile({ name: "Default profile" });
+    const profile = defaultProfile({ name: "New profile" });
     const state: JsonState = {
       activeProfileId: profile.id,
       profiles: [profile],
@@ -49,7 +49,7 @@ function loadState(): JsonState {
   parsed.applications = Array.isArray(parsed.applications) ? parsed.applications : [];
   parsed.answers = Array.isArray(parsed.answers) ? parsed.answers : [];
   if (!parsed.profiles.length) {
-    const profile = defaultProfile({ name: "Default profile" });
+    const profile = defaultProfile({ name: "New profile" });
     parsed.profiles = [profile];
     parsed.activeProfileId = profile.id;
     saveState(parsed);

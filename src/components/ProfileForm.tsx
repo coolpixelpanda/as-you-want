@@ -1,8 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { LoaderCircle, Plus, Trash2, Upload } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { LoaderCircle, Plus, RefreshCw, Save, Trash2, Upload } from "lucide-react";
 import { US_STATES, normalizeStateCode } from "@/lib/us-states";
+import { Button } from "@/components/ui/Button";
+import { useNotice } from "@/components/NoticeProvider";
 
 type Exp = {
   company: string;
@@ -99,6 +102,8 @@ const areaClass =
   "min-h-28 w-full rounded-lg border border-line bg-paper px-3 py-2 text-ink outline-none ring-accent/30 focus:ring-2";
 
 export function ProfileForm({ profileId }: { profileId?: string }) {
+  const router = useRouter();
+  const { notify, confirm } = useNotice();
   const [profile, setProfile] = useState<Record<string, unknown> | null>(null);
   const [experiences, setExperiences] = useState<Exp[]>([]);
   const [educations, setEducations] = useState<Edu[]>([]);
@@ -210,8 +215,11 @@ export function ProfileForm({ profileId }: { profileId?: string }) {
               ? "Tailored resume uploaded."
               : "Cover letter uploaded."),
       );
+      if (data.error) notify("error", data.error);
+      else notify("success", data.message || (kind === "resume" ? "Resume parsed." : "File uploaded."));
     } catch {
       setStatus("Could not upload that file.");
+      notify("error", "Could not upload that file.");
     } finally {
       setParsing(false);
     }
@@ -239,8 +247,11 @@ export function ProfileForm({ profileId }: { profileId?: string }) {
         );
       }
       setStatus(data.error || data.message || "Parsed.");
+      if (data.error) notify("error", data.error);
+      else notify("success", data.message || "Resume parsed.");
     } catch {
       setStatus("Could not parse the resume.");
+      notify("error", "Could not parse the resume.");
     } finally {
       setParsing(false);
     }
@@ -250,20 +261,46 @@ export function ProfileForm({ profileId }: { profileId?: string }) {
     if (!profile) return;
     setSaving(true);
     setStatus("");
+    try {
       const res = await fetch(`/api/profile${idQuery}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...profile,
-        experiences: experiences.filter((e) => e.company || e.title),
-        educations: educations.filter((e) => e.school),
-        answers: answers.filter((a) => a.question && a.answer),
-      }),
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...profile,
+          experiences: experiences.filter((e) => e.company || e.title),
+          educations: educations.filter((e) => e.school),
+          answers: answers.filter((a) => a.question && a.answer),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data.profile) applyProfile(data.profile, "save");
+      setStatus(res.ok ? "Saved." : data.error || "Could not save.");
+      notify(res.ok ? "success" : "error", res.ok ? "Profile saved." : data.error || "Could not save.");
+    } catch {
+      setStatus("Could not save.");
+      notify("error", "Could not save this profile.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removeProfile() {
+    if (!profileId) return;
+    const ok = await confirm({
+      title: "Delete this profile?",
+      message: "This draft, including the resume, jobs, and schools, will be removed.",
+      confirmLabel: "Delete profile",
+      danger: true,
     });
-    const data = await res.json();
-    if (data.profile) applyProfile(data.profile, "save");
-    setSaving(false);
-    setStatus(res.ok ? "Saved." : data.error || "Could not save.");
+    if (!ok) return;
+    const res = await fetch(`/api/profiles?id=${encodeURIComponent(profileId)}`, { method: "DELETE" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      notify("error", data.error || "Could not delete this profile.");
+      return;
+    }
+    notify("success", "Profile deleted.");
+    router.push("/profiles");
   }
 
   if (!profile) {
@@ -277,7 +314,14 @@ export function ProfileForm({ profileId }: { profileId?: string }) {
   return (
     <div className="space-y-8">
       <section className="rounded-2xl border border-line bg-card p-6">
-        <h2 className="font-serif text-2xl">Start from a resume</h2>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <h2 className="font-serif text-2xl">Start from a resume</h2>
+          {profileId ? (
+            <Button variant="danger" icon={Trash2} onClick={() => void removeProfile()}>
+              Delete profile
+            </Button>
+          ) : null}
+        </div>
         <p className="mt-1 text-sm text-muted">
           Drop a PDF, DOCX, or TXT resume. We fill name, contact, links, jobs, and schools, then you can edit anything below.
         </p>
@@ -287,7 +331,7 @@ export function ProfileForm({ profileId }: { profileId?: string }) {
           </Field>
         </div>
         <label
-          className={`mt-4 flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed px-4 py-8 text-center ${
+          className={`mt-4 flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed px-4 py-8 text-center transition hover:border-accent hover:bg-[#f7efe6] ${
             dragOver ? "border-accent bg-[#f7efe6]" : "border-line bg-paper/70"
           } ${parsing ? "opacity-70" : ""}`}
           onDragOver={(e) => {
@@ -321,14 +365,9 @@ export function ProfileForm({ profileId }: { profileId?: string }) {
         </label>
         <div className="mt-4 flex flex-wrap items-center gap-3">
           {profile.resumePath || profile.resumeText ? (
-            <button
-              type="button"
-              disabled={parsing}
-              onClick={() => void reparse()}
-              className="h-11 rounded-xl border border-line px-4 text-sm disabled:opacity-50"
-            >
+            <Button variant="secondary" icon={RefreshCw} loading={parsing} onClick={() => void reparse()}>
               Parse again
-            </button>
+            </Button>
           ) : null}
         </div>
         {status ? <p className="mt-3 text-sm text-muted">{status}</p> : null}
@@ -519,9 +558,9 @@ export function ProfileForm({ profileId }: { profileId?: string }) {
       <section id="experience" className="rounded-2xl border border-line bg-card p-6">
         <div className="flex items-center justify-between">
           <h2 className="font-serif text-2xl">Experience</h2>
-          <button type="button" className="inline-flex items-center gap-1 text-sm text-accent" onClick={() => setExperiences((rows) => [...rows, emptyExp()])}>
-            <Plus size={14} /> Add
-          </button>
+          <Button variant="ghost" size="sm" icon={Plus} onClick={() => setExperiences((rows) => [...rows, emptyExp()])}>
+            Add
+          </Button>
         </div>
         <p className="mt-1 text-sm text-muted">
           {experiences.filter((row) => row.company || row.title).length
@@ -545,9 +584,15 @@ export function ProfileForm({ profileId }: { profileId?: string }) {
                 <input className={inputClass} placeholder="End year" value={row.endYear || ""} onChange={(e) => setExperiences(patch(experiences, i, { endYear: e.target.value }))} />
               </div>
               <textarea className={`${areaClass} mt-3`} placeholder="What you did" value={row.description || ""} onChange={(e) => setExperiences(patch(experiences, i, { description: e.target.value }))} />
-              <button type="button" className="mt-2 text-sm text-bad" onClick={() => setExperiences(experiences.filter((_, idx) => idx !== i))}>
-                <Trash2 size={12} className="mr-1 inline" /> Remove
-              </button>
+              <Button
+                variant="danger"
+                size="sm"
+                icon={Trash2}
+                className="mt-3"
+                onClick={() => setExperiences(experiences.filter((_, idx) => idx !== i))}
+              >
+                Remove
+              </Button>
             </div>
           ))}
         </div>
@@ -556,9 +601,9 @@ export function ProfileForm({ profileId }: { profileId?: string }) {
       <section id="education" className="rounded-2xl border border-line bg-card p-6">
         <div className="flex items-center justify-between">
           <h2 className="font-serif text-2xl">Education</h2>
-          <button type="button" className="inline-flex items-center gap-1 text-sm text-accent" onClick={() => setEducations((rows) => [...rows, emptyEdu()])}>
-            <Plus size={14} /> Add
-          </button>
+          <Button variant="ghost" size="sm" icon={Plus} onClick={() => setEducations((rows) => [...rows, emptyEdu()])}>
+            Add
+          </Button>
         </div>
         <p className="mt-1 text-sm text-muted">
           {educations.filter((row) => row.school).length
@@ -567,12 +612,23 @@ export function ProfileForm({ profileId }: { profileId?: string }) {
         </p>
         <div className="mt-4 space-y-4">
           {educations.map((row, i) => (
-            <div key={`${row.school}-${row.degree}-${i}`} className="grid gap-3 rounded-xl border border-line p-4 sm:grid-cols-2">
-              <input className={inputClass} placeholder="School" value={row.school || ""} onChange={(e) => setEducations(patch(educations, i, { school: e.target.value }))} />
-              <input className={inputClass} placeholder="Degree" value={row.degree || ""} onChange={(e) => setEducations(patch(educations, i, { degree: e.target.value }))} />
-              <input className={inputClass} placeholder="Discipline / major" value={row.discipline || ""} onChange={(e) => setEducations(patch(educations, i, { discipline: e.target.value }))} />
-              <input className={inputClass} placeholder="Start year" value={row.startYear || ""} onChange={(e) => setEducations(patch(educations, i, { startYear: e.target.value }))} />
-              <input className={inputClass} placeholder="End year" value={row.endYear || ""} onChange={(e) => setEducations(patch(educations, i, { endYear: e.target.value }))} />
+            <div key={`${row.school}-${row.degree}-${i}`} className="rounded-xl border border-line p-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <input className={inputClass} placeholder="School" value={row.school || ""} onChange={(e) => setEducations(patch(educations, i, { school: e.target.value }))} />
+                <input className={inputClass} placeholder="Degree" value={row.degree || ""} onChange={(e) => setEducations(patch(educations, i, { degree: e.target.value }))} />
+                <input className={inputClass} placeholder="Discipline / major" value={row.discipline || ""} onChange={(e) => setEducations(patch(educations, i, { discipline: e.target.value }))} />
+                <input className={inputClass} placeholder="Start year" value={row.startYear || ""} onChange={(e) => setEducations(patch(educations, i, { startYear: e.target.value }))} />
+                <input className={inputClass} placeholder="End year" value={row.endYear || ""} onChange={(e) => setEducations(patch(educations, i, { endYear: e.target.value }))} />
+              </div>
+              <Button
+                variant="danger"
+                size="sm"
+                icon={Trash2}
+                className="mt-3"
+                onClick={() => setEducations(educations.filter((_, idx) => idx !== i))}
+              >
+                Remove
+              </Button>
             </div>
           ))}
         </div>
@@ -629,7 +685,7 @@ export function ProfileForm({ profileId }: { profileId?: string }) {
           <p className="text-sm text-muted">
             Easy Apply attaches this file as <span className="text-ink">FirstName_LastName.pdf</span> or .docx. Pick original or tailored in the extension.
           </p>
-          <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-line p-4">
+          <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-line p-4 transition hover:border-accent hover:bg-[#f7efe6]">
             <Upload size={16} />
             <span className="text-sm">
               Original resume {profile.resumePath ? <span className="text-muted">· uploaded</span> : <span className="text-bad">· required</span>}
@@ -646,7 +702,7 @@ export function ProfileForm({ profileId }: { profileId?: string }) {
               }}
             />
           </label>
-          <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-line p-4">
+          <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-line p-4 transition hover:border-accent hover:bg-[#f7efe6]">
             <Upload size={16} />
             <span className="text-sm">
               Tailored resume {profile.tailoredResumePath ? <span className="text-muted">· uploaded</span> : <span className="text-muted">· optional</span>}
@@ -662,7 +718,7 @@ export function ProfileForm({ profileId }: { profileId?: string }) {
               }}
             />
           </label>
-          <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-line p-4">
+          <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-line p-4 transition hover:border-accent hover:bg-[#f7efe6]">
             <Upload size={16} />
             <span className="text-sm">
               Cover letter file {profile.coverLetterPath ? <span className="text-muted">· uploaded</span> : null}
@@ -681,9 +737,9 @@ export function ProfileForm({ profileId }: { profileId?: string }) {
       <section className="rounded-2xl border border-line bg-card p-6">
         <div className="flex items-center justify-between">
           <h2 className="font-serif text-2xl">Saved answers</h2>
-          <button type="button" className="inline-flex items-center gap-1 text-sm text-accent" onClick={() => setAnswers((rows) => [...rows, { question: "", answer: "" }])}>
-            <Plus size={14} /> Add
-          </button>
+          <Button variant="ghost" size="sm" icon={Plus} onClick={() => setAnswers((rows) => [...rows, { question: "", answer: "" }])}>
+            Add
+          </Button>
         </div>
         <p className="mt-1 text-sm text-muted">
           Default answers from this profile are listed here. Each question keeps one answer — saving the same question again replaces the previous answer.
@@ -710,14 +766,13 @@ export function ProfileForm({ profileId }: { profileId?: string }) {
                     />
                   </Field>
                 </div>
-                <button
-                  type="button"
-                  className="mt-7 shrink-0 rounded-lg p-2 text-muted hover:bg-card hover:text-bad"
+                <Button
+                  variant="danger"
+                  icon={Trash2}
+                  className="mt-7 shrink-0"
                   onClick={() => setAnswers(answers.filter((_, idx) => idx !== i))}
                   aria-label="Remove saved answer"
-                >
-                  <Trash2 size={16} />
-                </button>
+                />
               </div>
             </div>
           ))}
@@ -738,16 +793,15 @@ export function ProfileForm({ profileId }: { profileId?: string }) {
         </div>
       </section>
 
-      <div className="flex items-center gap-4">
-        <button
-          type="button"
-          onClick={save}
-          disabled={saving}
-          className="inline-flex h-12 items-center gap-2 rounded-xl bg-ink px-6 text-paper disabled:opacity-50"
-        >
-          {saving ? <LoaderCircle className="animate-spin" size={16} /> : null}
+      <div className="flex flex-wrap items-center gap-3">
+        <Button variant="primary" icon={Save} loading={saving} onClick={() => void save()}>
           Save profile
-        </button>
+        </Button>
+        {profileId ? (
+          <Button variant="danger" icon={Trash2} onClick={() => void removeProfile()}>
+            Delete profile
+          </Button>
+        ) : null}
         {status ? <span className="text-sm text-muted">{status}</span> : null}
       </div>
     </div>

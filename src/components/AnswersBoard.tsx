@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/Button";
+import { useNotice } from "@/components/NoticeProvider";
 
 type Saved = {
   id: string;
@@ -25,6 +27,7 @@ type Asked = {
 };
 
 export function AnswersBoard() {
+  const { notify, confirm } = useNotice();
   const [saved, setSaved] = useState<Saved[]>([]);
   const [asked, setAsked] = useState<Asked[]>([]);
 
@@ -40,9 +43,21 @@ export function AnswersBoard() {
   }, []);
 
   async function remove(row: Saved) {
-    await fetch(`/api/answers?profileId=${encodeURIComponent(row.profileId)}&id=${encodeURIComponent(row.id)}`, {
+    const ok = await confirm({
+      title: "Delete this answer?",
+      message: "This saved answer will no longer be reused on applications.",
+      confirmLabel: "Delete answer",
+      danger: true,
+    });
+    if (!ok) return;
+    const res = await fetch(`/api/answers?profileId=${encodeURIComponent(row.profileId)}&id=${encodeURIComponent(row.id)}`, {
       method: "DELETE",
     });
+    if (!res.ok) {
+      notify("error", "Could not delete that answer.");
+      return;
+    }
+    notify("success", "Saved answer deleted.");
     await load();
   }
 
@@ -75,14 +90,12 @@ export function AnswersBoard() {
                     {row.source === "profile" ? " · profile default" : row.source ? ` · ${row.source}` : ""}
                   </p>
                 </div>
-                <button
-                  type="button"
-                  className="shrink-0 rounded-lg p-2 text-muted hover:bg-paper hover:text-bad"
+                <Button
+                  variant="danger"
+                  icon={Trash2}
                   onClick={() => void remove(row)}
                   aria-label="Delete saved answer"
-                >
-                  <Trash2 size={16} />
-                </button>
+                />
               </div>
             ))}
           </div>
@@ -102,7 +115,7 @@ export function AnswersBoard() {
               <Link
                 key={`${row.applicationId}-${i}`}
                 href={`/applications/${row.applicationId}`}
-                className="block px-5 py-4 hover:bg-paper/70"
+                className="block px-5 py-4 transition hover:bg-paper/70"
               >
                 <p className="font-medium">{row.question}</p>
                 <p className="mt-1 text-sm text-muted">{row.answer || "Not answered yet"}</p>

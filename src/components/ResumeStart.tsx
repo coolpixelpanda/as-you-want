@@ -3,16 +3,16 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { LoaderCircle, Upload } from "lucide-react";
+import { useNotice } from "@/components/NoticeProvider";
 
 export function ResumeStart() {
   const router = useRouter();
+  const { notify } = useNotice();
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
   const [dragOver, setDragOver] = useState(false);
 
   async function start(file: File) {
     setBusy(true);
-    setError("");
     try {
       const created = await fetch("/api/profiles", {
         method: "POST",
@@ -38,9 +38,10 @@ export function ResumeStart() {
           }),
         );
       }
+      notify("success", data.message || "Resume parsed. Review the profile, then save.");
       router.push(`/profiles/${profile.id}#experience`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not read that resume.");
+      notify("error", err instanceof Error ? err.message : "Could not read that resume.");
       setBusy(false);
     }
   }
@@ -52,7 +53,7 @@ export function ResumeStart() {
         Upload a PDF, DOCX, or TXT file. We create the profile and fill name, contact, jobs, and schools.
       </p>
       <label
-        className={`mt-4 flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed px-4 py-8 text-center ${
+        className={`mt-4 flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed px-4 py-8 text-center transition hover:border-accent hover:bg-[#f7efe6] ${
           dragOver ? "border-accent bg-[#f7efe6]" : "border-line bg-paper/70"
         } ${busy ? "opacity-70" : ""}`}
         onDragOver={(e) => {
@@ -81,7 +82,6 @@ export function ResumeStart() {
           }}
         />
       </label>
-      {error ? <p className="mt-3 text-sm text-bad">{error}</p> : null}
     </div>
   );
 }

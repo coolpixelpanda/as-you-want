@@ -270,24 +270,39 @@ export async function dbCreateProfile(name = "New profile"): Promise<Profile> {
 }
 
 export async function dbDeleteProfile(id: string) {
-  const profiles = await dbListProfiles();
-  if (profiles.length <= 1) throw new Error("Keep at least one profile.");
   await ensureStorage();
+  const profiles = await dbListProfiles();
+  if (!profiles.some((row) => row.id === id)) return;
+  const remaining = profiles.filter((row) => row.id !== id);
+  if (!remaining.length) {
+    const blank = defaultProfile({ name: "New profile" });
+    await dbWriteProfile(blank);
+    await dbSetActiveProfile(blank.id);
+  }
   if (usesJsonStore()) {
     jsonDeleteProfile(id);
-    const next = profiles.filter((row) => row.id !== id);
-    const active = jsonGetActiveProfileId();
-    if (active === id) jsonSetActiveProfile(next[0].id);
-    return;
-  }
-  if (usesPostgres()) {
+  } else if (usesPostgres()) {
+    await getPrisma().savedAnswer.deleteMany({ where: { profileId: id } });
+    await getPrisma().experience.deleteMany({ where: { profileId: id } });
+    await getPrisma().education.deleteMany({ where: { profileId: id } });
+    await getPrisma().storedFile.deleteMany({ where: { profileId: id } });
     await getPrisma().profile.delete({ where: { id } });
   } else {
+    run("DELETE FROM saved_answers WHERE profile_id = ?", id);
+    run("DELETE FROM experiences WHERE profile_id = ?", id);
+    run("DELETE FROM educations WHERE profile_id = ?", id);
+    run("DELETE FROM files WHERE profile_id = ?", id);
     run("DELETE FROM profiles WHERE id = ?", id);
   }
-  const next = profiles.filter((row) => row.id !== id);
+  const next = (await dbListProfiles()).filter((row) => row.id !== id);
+  if (!next.length) {
+    const blank = defaultProfile({ name: "New profile" });
+    await dbWriteProfile(blank);
+    await dbSetActiveProfile(blank.id);
+    return;
+  }
   const active = await dbGetActiveProfileId();
-  if (active === id) await dbSetActiveProfile(next[0].id);
+  if (active === id || !next.some((row) => row.id === active)) await dbSetActiveProfile(next[0].id);
 }
 
 export async function dbWriteProfile(profile: Profile) {

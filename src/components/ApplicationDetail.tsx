@@ -2,8 +2,10 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { LoaderCircle, Play } from "lucide-react";
+import { LoaderCircle, Play, Save, Send } from "lucide-react";
 import { StatusBadge } from "@/components/StatusBadge";
+import { Button } from "@/components/ui/Button";
+import { useNotice } from "@/components/NoticeProvider";
 import { atsLabel } from "@/lib/ats/detect";
 import type { ApplyLog, AtsKind, MappedAnswer } from "@/lib/types";
 
@@ -24,6 +26,7 @@ type AppRecord = {
 };
 
 export function ApplicationDetail({ id }: { id: string }) {
+  const { notify } = useNotice();
   const [app, setApp] = useState<AppRecord | null>(null);
   const [busy, setBusy] = useState(false);
   const [answers, setAnswers] = useState<MappedAnswer[]>([]);
@@ -49,25 +52,45 @@ export function ApplicationDetail({ id }: { id: string }) {
 
   async function saveAnswers() {
     setBusy(true);
-    await fetch(`/api/applications/${id}/answers`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ answers }),
-    });
-    await refresh();
-    setBusy(false);
+    try {
+      const res = await fetch(`/api/applications/${id}/answers`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ answers }),
+      });
+      if (!res.ok) throw new Error("Could not save answers.");
+      await refresh();
+      notify("success", "Answers saved.");
+    } catch (err) {
+      notify("error", err instanceof Error ? err.message : "Could not save answers.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function run(submit: boolean) {
     setBusy(true);
-    await saveAnswers();
-    await fetch(`/api/applications/${id}/submit`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ submit }),
-    });
-    await refresh();
-    setBusy(false);
+    try {
+      const saved = await fetch(`/api/applications/${id}/answers`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ answers }),
+      });
+      if (!saved.ok) throw new Error("Could not save answers.");
+      const res = await fetch(`/api/applications/${id}/submit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ submit }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Could not start the browser fill.");
+      await refresh();
+      notify("success", submit ? "Filling and submitting in the browser." : "Filling the form in the browser.");
+    } catch (err) {
+      notify("error", err instanceof Error ? err.message : "Could not run that action.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   if (!app) {
@@ -189,30 +212,15 @@ export function ApplicationDetail({ id }: { id: string }) {
             ))}
           </div>
           <div className="mt-5 flex flex-wrap gap-3">
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void saveAnswers()}
-              className="h-11 rounded-xl border border-line px-4 text-sm"
-            >
+            <Button variant="secondary" icon={Save} loading={busy} onClick={() => void saveAnswers()}>
               Save answers
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void run(false)}
-              className="inline-flex h-11 items-center gap-2 rounded-xl border border-line px-4 text-sm"
-            >
-              <Play size={14} /> Fill in browser
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void run(true)}
-              className="inline-flex h-11 items-center gap-2 rounded-xl bg-accent px-4 text-sm text-white hover:bg-accent-dark"
-            >
+            </Button>
+            <Button variant="secondary" icon={Play} loading={busy} onClick={() => void run(false)}>
+              Fill in browser
+            </Button>
+            <Button variant="accent" icon={Send} loading={busy} onClick={() => void run(true)}>
               Fill and submit
-            </button>
+            </Button>
           </div>
         </section>
       ) : (
