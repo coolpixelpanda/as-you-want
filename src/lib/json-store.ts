@@ -31,16 +31,19 @@ function filesDir() {
   return path.join(appDataDir(), "files");
 }
 
+function emptyState(): JsonState {
+  return {
+    activeProfileId: "",
+    profiles: [],
+    applications: [],
+    answers: [],
+  };
+}
+
 function loadState(): JsonState {
   fs.mkdirSync(appDataDir(), { recursive: true });
   if (!fs.existsSync(statePath())) {
-    const profile = defaultProfile({ name: "New profile" });
-    const state: JsonState = {
-      activeProfileId: profile.id,
-      profiles: [profile],
-      applications: [],
-      answers: [],
-    };
+    const state = emptyState();
     saveState(state);
     return state;
   }
@@ -49,10 +52,8 @@ function loadState(): JsonState {
   parsed.applications = Array.isArray(parsed.applications) ? parsed.applications : [];
   parsed.answers = Array.isArray(parsed.answers) ? parsed.answers : [];
   if (!parsed.profiles.length) {
-    const profile = defaultProfile({ name: "New profile" });
-    parsed.profiles = [profile];
-    parsed.activeProfileId = profile.id;
-    saveState(parsed);
+    parsed.activeProfileId = "";
+    return parsed;
   }
   if (!parsed.activeProfileId || !parsed.profiles.some((row) => row.id === parsed.activeProfileId)) {
     parsed.activeProfileId = parsed.profiles[0].id;
@@ -75,7 +76,7 @@ export function jsonGetActiveProfileId(): string {
 
 export function jsonSetActiveProfile(id: string) {
   const state = loadState();
-  if (!state.profiles.some((row) => row.id === id)) return;
+  if (id && !state.profiles.some((row) => row.id === id)) return;
   state.activeProfileId = id;
   saveState(state);
 }

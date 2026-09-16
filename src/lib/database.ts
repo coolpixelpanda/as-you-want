@@ -199,16 +199,14 @@ function hydrateSqliteProfile(row: Record<string, unknown>): Profile {
 export async function dbGetActiveProfileId(): Promise<string> {
   if (usesJsonStore()) {
     const profiles = jsonListProfiles();
+    if (!profiles.length) return "";
     const active = jsonGetActiveProfileId();
     if (active && profiles.some((row) => row.id === active)) return active;
     jsonSetActiveProfile(profiles[0].id);
     return profiles[0].id;
   }
   const profiles = await dbListProfiles();
-  if (!profiles.length) {
-    const created = await dbCreateProfile("Default profile");
-    return created.id;
-  }
+  if (!profiles.length) return "";
   if (usesPostgres()) {
     const meta = await getPrisma().appMeta.findUnique({ where: { key: "active_profile_id" } });
     if (meta?.value && profiles.some((row) => row.id === meta.value)) return meta.value;
@@ -248,6 +246,11 @@ export async function dbReadProfile(id?: string): Promise<Profile> {
     }
     return found;
   }
+  if (!profiles.length) {
+    const error = new Error("PROFILE_NOT_FOUND");
+    error.name = "ProfileNotFound";
+    throw error;
+  }
   const activeId = await dbGetActiveProfileId();
   return profiles.find((row) => row.id === activeId) || profiles[0];
 }
@@ -273,12 +276,6 @@ export async function dbDeleteProfile(id: string) {
   await ensureStorage();
   const profiles = await dbListProfiles();
   if (!profiles.some((row) => row.id === id)) return;
-  const remaining = profiles.filter((row) => row.id !== id);
-  if (!remaining.length) {
-    const blank = defaultProfile({ name: "New profile" });
-    await dbWriteProfile(blank);
-    await dbSetActiveProfile(blank.id);
-  }
   if (usesJsonStore()) {
     jsonDeleteProfile(id);
   } else if (usesPostgres()) {
@@ -296,9 +293,7 @@ export async function dbDeleteProfile(id: string) {
   }
   const next = (await dbListProfiles()).filter((row) => row.id !== id);
   if (!next.length) {
-    const blank = defaultProfile({ name: "New profile" });
-    await dbWriteProfile(blank);
-    await dbSetActiveProfile(blank.id);
+    await dbSetActiveProfile("");
     return;
   }
   const active = await dbGetActiveProfileId();

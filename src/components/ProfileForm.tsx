@@ -156,7 +156,7 @@ export function ProfileForm({ profileId }: { profileId?: string }) {
       loadGen.current += 1;
     }
     const ac = new AbortController();
-    fetch(`/api/profile${idQuery}`, { signal: ac.signal })
+    fetch(`/api/profile${idQuery}`, { signal: ac.signal, cache: "no-store" })
       .then(async (r) => {
         if (!r.ok) return null;
         return r.json();
@@ -293,7 +293,7 @@ export function ProfileForm({ profileId }: { profileId?: string }) {
       danger: true,
     });
     if (!ok) return;
-    const res = await fetch(`/api/profiles?id=${encodeURIComponent(profileId)}`, { method: "DELETE" });
+    const res = await fetch(`/api/profiles?id=${encodeURIComponent(profileId)}`, { method: "DELETE", cache: "no-store" });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       notify("error", data.error || "Could not delete this profile.");
@@ -301,6 +301,7 @@ export function ProfileForm({ profileId }: { profileId?: string }) {
     }
     notify("success", "Profile deleted.");
     router.push("/profiles");
+    router.refresh();
   }
 
   if (!profile) {

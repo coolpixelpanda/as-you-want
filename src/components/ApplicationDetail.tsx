@@ -104,8 +104,8 @@ export function ApplicationDetail({ id }: { id: string }) {
   return (
     <div className="space-y-6">
       <div>
-        <Link href="/" className="text-sm text-muted hover:text-ink">
-          ← All applications
+        <Link href="/profiles" className="text-sm text-muted hover:text-ink">
+          ← All profiles
         </Link>
         <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
           <div>
