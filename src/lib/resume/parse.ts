@@ -3,7 +3,7 @@ import path from "node:path";
 import { z } from "zod";
 import { getModel, getOpenAI } from "@/lib/openai";
 import { newId, type Profile } from "@/lib/store-types";
-import { normalizeStateCode } from "@/lib/us-states";
+import { US_STATES, normalizeStateCode } from "@/lib/us-states";
 
 const textField = z.union([z.string(), z.number(), z.null()]).optional().transform((v) =>
   v == null ? "" : String(v).trim(),
@@ -177,7 +177,20 @@ function splitParts(text: string) {
 }
 
 function isLocation(text: string) {
-  return /,\s*[A-Z]{2}\b|united states|usa\b|remote|hybrid/i.test(text);
+  const value = String(text || "").trim();
+  if (!value || value.length > 80) return false;
+  if (/,\s*[A-Z]{2}\b|united states|\busa\b|\bremote\b|\bhybrid\b/i.test(value)) return true;
+  const lower = value.toLowerCase();
+  return US_STATES.some((row) => lower.includes(row.name.toLowerCase()));
+}
+
+function stripDates(text: string) {
+  return String(text || "")
+    .replace(DATE_RANGE, " ")
+    .replace(new RegExp(`\\b(?:${MONTH_NAME}[.]?\\s+)?${YEAR}\\b`, "gi"), " ")
+    .replace(/\s*[|•·—–-]\s*$/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }
 
 function isBullet(line: string) {
@@ -238,12 +251,13 @@ function normalizeExperience(raw: unknown) {
     .filter(Boolean);
   const description = pickText(row, ["description", "summary", "details", "highlights"]) || bullets.join("\n");
   return {
-    company:
+    company: stripDates(
       pickText(row, ["company", "companyName", "employer", "organization", "org"]) ||
-      nestedName(row.company) ||
-      nestedName(row.employer),
-    title: pickText(row, ["title", "role", "position", "jobTitle"]) || nestedName(row.title),
-    location: pickText(row, ["location", "city", "place"]) || nestedName(row.location),
+        nestedName(row.company) ||
+        nestedName(row.employer),
+    ),
+    title: stripDates(pickText(row, ["title", "role", "position", "jobTitle"]) || nestedName(row.title)),
+    location: stripDates(pickText(row, ["location", "city", "place"]) || nestedName(row.location)),
     startMonth: pickText(row, ["startMonth"]) || dates.startMonth || startLoose.month,
     startYear: pickText(row, ["startYear"]) || dates.startYear || startLoose.year,
     endMonth: pickText(row, ["endMonth"]) || dates.endMonth || endLoose.month,
@@ -359,7 +373,7 @@ export function normalizeResumeText(text: string) {
     .replace(new RegExp(`([a-z0-9.])(${SECTION_HEADERS})\\b`, "gi"), "$1\n$2")
     .replace(new RegExp(`\\b(${SECTION_HEADERS})(?=[A-Z][a-z])`, "g"), "$1\n")
     .replace(new RegExp(`(?:^|\\n)[ \\t]*(${SECTION_HEADERS})\\s*:?[ \\t]*`, "gi"), "\n\n$1\n")
-    .replace(new RegExp(`(${DATE_TOKEN}\\s*(?:–|—|-|to)\\s*(?:Present|Current|Now|${DATE_TOKEN}))`, "gi"), "\n$1\n")
+    .replace(new RegExp(`([A-Za-z])((?:${MONTH_NAME}[.]?\\s+)?${YEAR}\\s*(?:–|—|-|to)\\s*(?:Present|Current|Now|${DATE_TOKEN}))`, "gi"), "$1\n$2")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
@@ -427,6 +441,49 @@ function findDateRange(line: string) {
   return { text: match[0], rest, dates: splitDateRange(match[0]) };
 }
 
+function findDateLine(line: string) {
+  const text = String(line || "").trim();
+  if (!text || isBullet(text)) return null;
+  const range = findDateRange(text);
+  if (range) return range;
+  if (new RegExp(`^(?:${MONTH_NAME}[.]?\\s+)?${YEAR}$`, "i").test(text)) {
+    const parsed = parseLooseDate(text);
+    return {
+      text,
+      rest: "",
+      dates: {
+        startMonth: parsed.month,
+        startYear: parsed.year,
+        endMonth: "",
+        endYear: parsed.year,
+        current: false,
+      },
+    };
+  }
+  return null;
+}
+
+function peelDates(headers: string[], seed?: ReturnType<typeof splitDateRange>) {
+  let dates = seed || { startMonth: "", startYear: "", endMonth: "", endYear: "", current: false };
+  const kept: string[] = [];
+  for (const header of headers) {
+    const dated = findDateLine(header);
+    if (!dated) {
+      kept.push(header);
+      continue;
+    }
+    dates = {
+      startMonth: dated.dates.startMonth || dates.startMonth,
+      startYear: dated.dates.startYear || dates.startYear,
+      endMonth: dated.dates.endMonth || dates.endMonth,
+      endYear: dated.dates.endYear || dates.endYear,
+      current: Boolean(dated.dates.current || dates.current),
+    };
+    if (dated.rest) kept.push(dated.rest);
+  }
+  return { headers: kept, dates };
+}
+
 function heuristicExperiences(text: string) {
   const headed = sliceSection(
     text,
@@ -439,13 +496,13 @@ function heuristicExperiences(text: string) {
   const starts: { from: number; dateIndex: number }[] = [];
 
   for (let i = 0; i < lines.length; i += 1) {
-    if (!findDateRange(lines[i])) continue;
+    if (!findDateLine(lines[i])) continue;
     const window = lines.slice(Math.max(0, i - 2), i + 3).join(" ");
     if (lookLikeEducation(window) && !TITLE_RE.test(window)) continue;
     let from = i;
     let look = i - 1;
     let taken = 0;
-    while (look >= 0 && taken < 3 && !findDateRange(lines[look]) && isRoleHeader(lines[look]) && !starts.some((row) => row.from === look)) {
+    while (look >= 0 && taken < 3 && !findDateLine(lines[look]) && isRoleHeader(lines[look]) && !starts.some((row) => row.from === look)) {
       from = look;
       look -= 1;
       taken += 1;
@@ -465,14 +522,14 @@ function heuristicExperiences(text: string) {
       const end = starts[index + 1]?.from ?? lines.length;
       const body = lines.slice(start.from, end);
       const dateIndex = start.dateIndex - start.from;
-      const dated = findDateRange(body[dateIndex] || "");
+      const dated = findDateLine(body[dateIndex] || "");
       const before = body.slice(0, dateIndex);
       const after = body.slice(dateIndex + 1);
       const headers: string[] = [...before];
       const bullets: string[] = [];
       let seenBullet = false;
       for (const line of after) {
-        if (!seenBullet && isRoleHeader(line) && headers.length < 4 && !findDateRange(line)) {
+        if (!seenBullet && isRoleHeader(line) && headers.length < 5 && !isBullet(line)) {
           headers.push(line);
         } else {
           seenBullet = true;
@@ -481,10 +538,11 @@ function heuristicExperiences(text: string) {
       }
       if (dated?.rest) headers.unshift(dated.rest);
       else if (body[dateIndex] && !dated) headers.unshift(body[dateIndex]);
-      const assigned = assignJobHeaders(headers.flatMap(splitParts));
+      const peeled = peelDates(headers, dated?.dates);
+      const assigned = assignJobHeaders(peeled.headers.flatMap(splitParts));
       return normalizeExperience({
         ...assigned,
-        ...dated?.dates,
+        ...peeled.dates,
         description: bullets.join("\n"),
       });
     })
@@ -600,39 +658,80 @@ export function heuristicParse(text: string): ParsedResume {
   });
 }
 
-function jobKey(row: { company?: string; title?: string }) {
-  return `${row.company || ""}|${row.title || ""}`.toLowerCase().replace(/\s+/g, " ").trim();
+function compactName(value: string) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
 }
 
-function schoolKey(row: { school?: string; degree?: string }) {
-  return `${row.school || ""}|${row.degree || ""}`.toLowerCase().replace(/\s+/g, " ").trim();
+function sameJob(a: { company?: string; title?: string }, b: { company?: string; title?: string }) {
+  const companyA = compactName(a.company || "");
+  const companyB = compactName(b.company || "");
+  if (!companyA || !companyB) return false;
+  if (companyA !== companyB && !companyA.includes(companyB) && !companyB.includes(companyA)) return false;
+  const titleA = compactName(a.title || "");
+  const titleB = compactName(b.title || "");
+  if (!titleA || !titleB) return true;
+  return titleA === titleB || titleA.includes(titleB) || titleB.includes(titleA);
+}
+
+function sameSchool(a: { school?: string; degree?: string }, b: { school?: string; degree?: string }) {
+  const schoolA = compactName(a.school || "");
+  const schoolB = compactName(b.school || "");
+  if (!schoolA || !schoolB) return false;
+  if (schoolA !== schoolB && !schoolA.includes(schoolB) && !schoolB.includes(schoolA)) return false;
+  const degreeA = compactName(a.degree || "");
+  const degreeB = compactName(b.degree || "");
+  if (!degreeA || !degreeB) return true;
+  return degreeA === degreeB || degreeA.includes(degreeB) || degreeB.includes(degreeA);
 }
 
 function preferText(primary: string, fallback: string) {
   return String(primary || "").trim() || String(fallback || "").trim();
 }
 
-function unionByKey<T>(primary: T[], fallback: T[], keyFn: (row: T) => string, mergeFn: (a: T, b: T) => T) {
-  const out: T[] = [];
-  const used = new Set<string>();
-  const extras = new Map<string, T>();
-  for (const row of fallback) {
-    const key = keyFn(row);
-    if (key && key !== "|") extras.set(key, row);
-  }
-  for (const row of primary) {
-    const key = keyFn(row);
-    if (!key || key === "|") continue;
-    const extra = extras.get(key);
-    out.push(extra ? mergeFn(row, extra) : row);
-    used.add(key);
-  }
-  for (const row of fallback) {
-    const key = keyFn(row);
-    if (!key || key === "|" || used.has(key)) continue;
-    out.push(row);
-  }
+function mergeByMatch<T>(
+  primary: T[],
+  fallback: T[],
+  matchFn: (a: T, b: T) => boolean,
+  mergeFn: (a: T, b: T) => T,
+  keepUnmatched: (row: T) => boolean,
+) {
+  if (!primary.length) return fallback;
+  const used = new Set<number>();
+  const out = primary.map((row) => {
+    const index = fallback.findIndex((item, i) => !used.has(i) && matchFn(row, item));
+    if (index < 0) return row;
+    used.add(index);
+    return mergeFn(row, fallback[index]);
+  });
+  fallback.forEach((row, index) => {
+    if (!used.has(index) && keepUnmatched(row)) out.push(row);
+  });
   return out;
+}
+
+function jobSortValue(row: { current?: boolean; endYear?: string; startYear?: string }) {
+  if (row.current) return 9999;
+  return Number(row.endYear || row.startYear || 0);
+}
+
+function parseModelJson(raw: string) {
+  const cleaned = raw.replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    const start = cleaned.indexOf("{");
+    const end = cleaned.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+      try {
+        return JSON.parse(cleaned.slice(start, end + 1));
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
 }
 
 function mergeParsed(base: ParsedResume, overlay: ParsedResume): ParsedResume {
@@ -664,25 +763,37 @@ function mergeParsed(base: ParsedResume, overlay: ParsedResume): ParsedResume {
     skills: pick("skills"),
     certifications: pick("certifications"),
     projects: pick("projects"),
-    experiences: unionByKey(overlay.experiences, base.experiences, jobKey, (a, b) => ({
-      company: preferText(a.company, b.company),
-      title: preferText(a.title, b.title),
-      location: preferText(a.location, b.location),
-      startMonth: preferText(a.startMonth, b.startMonth),
-      startYear: preferText(a.startYear, b.startYear),
-      endMonth: preferText(a.endMonth, b.endMonth),
-      endYear: preferText(a.endYear, b.endYear),
-      current: Boolean(a.current || b.current),
-      description: (a.description || "").length >= (b.description || "").length ? a.description : b.description,
-    })),
-    educations: unionByKey(overlay.educations, base.educations, schoolKey, (a, b) => ({
-      school: preferText(a.school, b.school),
-      degree: preferText(a.degree, b.degree),
-      discipline: preferText(a.discipline, b.discipline),
-      startYear: preferText(a.startYear, b.startYear),
-      endYear: preferText(a.endYear, b.endYear),
-      current: Boolean(a.current || b.current),
-    })),
+    experiences: mergeByMatch(
+      overlay.experiences,
+      base.experiences,
+      sameJob,
+      (a, b) => ({
+        company: preferText(a.company, b.company),
+        title: preferText(a.title, b.title),
+        location: preferText(a.location, b.location),
+        startMonth: preferText(a.startMonth, b.startMonth),
+        startYear: preferText(a.startYear, b.startYear),
+        endMonth: preferText(a.endMonth, b.endMonth),
+        endYear: preferText(a.endYear, b.endYear),
+        current: Boolean(a.current || b.current),
+        description: (a.description || "").length >= (b.description || "").length ? a.description : b.description,
+      }),
+      (row) => Boolean((row.company || row.title) && (row.startYear || row.endYear || row.description)),
+    ).sort((a, b) => jobSortValue(b) - jobSortValue(a)),
+    educations: mergeByMatch(
+      overlay.educations,
+      base.educations,
+      sameSchool,
+      (a, b) => ({
+        school: preferText(a.school, b.school),
+        degree: preferText(a.degree, b.degree),
+        discipline: preferText(a.discipline, b.discipline),
+        startYear: preferText(a.startYear, b.startYear),
+        endYear: preferText(a.endYear, b.endYear),
+        current: Boolean(a.current || b.current),
+      }),
+      (row) => Boolean(row.school),
+    ),
   });
 }
 
@@ -698,11 +809,12 @@ export async function parseResumeText(text: string): Promise<ParsedResume> {
     const completion = await openai.chat.completions.create({
       model: getModel(),
       temperature: 0,
+      max_tokens: 8000,
       response_format: { type: "json_object" },
       messages: [
         {
           role: "system",
-          content: `You extract EVERY listed fact from a resume into JSON. Do not skip jobs, internships, contract roles, volunteer roles listed as work, or schools.
+          content: `You are a careful resume parser. Extract only facts that appear in the resume. Never invent employers, schools, dates, locations, or degrees.
 Return only JSON with this shape:
 {
   "firstName": "",
@@ -730,16 +842,15 @@ Return only JSON with this shape:
   "educations": [{"school":"","degree":"","discipline":"","startYear":"","endYear":"","current":false}]
 }
 Rules:
-- Copy only facts from the resume. Never invent employers, schools, dates, or degrees.
-- Include every work item under Experience / Work History / Internships, newest first. One object per role.
-- startMonth/endMonth: full month name when the resume has it (January, not 01). startYear/endYear: 4 digits.
-- If the resume says Jan 2022 – Present, set startMonth=January, startYear=2022, current=true, endMonth and endYear empty.
-- description: keep the resume bullets, one per line, without adding new achievements.
-- Include every school under Education. discipline is the major / field of study.
-- skills: comma-separated list of skills exactly as listed.
-- certifications and projects: keep listed items, separated clearly.
-- phone: digits, keep a leading + if shown.
-- URLs must be full https links when they can be reconstructed.`,
+- Include every paid job, internship, and contract role, newest first. One object per role, even if the company repeats.
+- company and title are required for each job. location is the job city/state/remote if the resume shows it.
+- Dates: copy the resume exactly. startMonth/endMonth are full month names (January). startYear/endYear are 4 digits.
+- "Jan 2022 – Present" => startMonth=January, startYear=2022, current=true, endMonth="", endYear="".
+- "September 2020 – August 2024" => startMonth=September, startYear=2020, endMonth=August, endYear=2024, current=false.
+- "2015 – 2017" => startYear=2015, endYear=2017. Leave months empty if the resume has no month.
+- description: resume bullets only, one per line, no extra achievements.
+- Include every school. discipline is the major / field of study.
+- This JSON replaces any previous resume. Do not carry over employers or schools that are not in this text.`,
         },
         {
           role: "user",
@@ -748,8 +859,8 @@ Rules:
       ],
     });
 
-    const raw = completion.choices[0]?.message?.content || "{}";
-    const json = JSON.parse(raw.replace(/^```(?:json)?/i, "").replace(/```$/, "").trim());
+    const json = parseModelJson(completion.choices[0]?.message?.content || "{}");
+    if (!json) return fallback;
     return mergeParsed(fallback, coerceParsed(json));
   } catch {
     if (fallback.experiences.length || fallback.educations.length || fallback.email || fallback.firstName) {
@@ -780,6 +891,7 @@ export function mergeParsedResume(profile: Profile, parsed: ParsedResume): Profi
 
   const experiences = (parsed.experiences || [])
     .filter((row) => row.company || row.title)
+    .sort((a, b) => jobSortValue(b) - jobSortValue(a))
     .map((row, index) => ({
       id: newId(),
       company: row.company || "",
@@ -837,11 +949,11 @@ export function mergeParsedResume(profile: Profile, parsed: ParsedResume): Profi
     githubUrl: pick("githubUrl", profile.githubUrl),
     portfolioUrl: pick("portfolioUrl", profile.portfolioUrl),
     websiteUrl: pick("websiteUrl", profile.websiteUrl),
-    currentCompany: pick("currentCompany", current?.company || profile.currentCompany),
-    currentTitle: pick("currentTitle", current?.title || profile.currentTitle),
+    currentCompany: current?.company || "",
+    currentTitle: current?.title || "",
     additionalInfo,
-    experiences: experiences.length ? experiences : profile.experiences.filter((row) => row.company || row.title),
-    educations: educations.length ? educations : profile.educations.filter((row) => row.school),
+    experiences,
+    educations,
   };
 }
 

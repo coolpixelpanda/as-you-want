@@ -124,19 +124,17 @@ export function ProfileForm({ profileId }: { profileId?: string }) {
     });
     setExperiences((prev) => {
       const prevFilled = prev.filter((row) => row.company || row.title);
-      if (source === "load" && prevFilled.length && filledExp.length < prevFilled.length) {
-        return prev;
-      }
+      if (source === "parse") return filledExp.length ? filledExp : [emptyExp()];
+      if (source === "load" && prevFilled.length && !filledExp.length) return prev;
       if (filledExp.length) return filledExp;
-      return source === "parse" ? prevFilled : [emptyExp()];
+      return [emptyExp()];
     });
     setEducations((prev) => {
       const prevFilled = prev.filter((row) => row.school);
-      if (source === "load" && prevFilled.length && filledEdu.length < prevFilled.length) {
-        return prev;
-      }
+      if (source === "parse") return filledEdu.length ? filledEdu : [emptyEdu()];
+      if (source === "load" && prevFilled.length && !filledEdu.length) return prev;
       if (filledEdu.length) return filledEdu;
-      return source === "parse" ? prevFilled : [emptyEdu()];
+      return [emptyEdu()];
     });
     setAnswers(nextAns.length ? nextAns : [{ question: "", answer: "" }]);
   }
