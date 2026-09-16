@@ -1,8 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
+import { getModel, getOpenAI } from "@/lib/openai";
+import { newId, type Profile } from "@/lib/store-types";
 import { normalizeStateCode } from "@/lib/us-states";
-import { newId, type Profile } from "@/lib/store";
 
 const textField = z.union([z.string(), z.number(), z.null()]).optional().transform((v) =>
   v == null ? "" : String(v).trim(),

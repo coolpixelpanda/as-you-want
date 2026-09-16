@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["playwright", "unpdf", "mammoth", "@prisma/client"],
+  serverExternalPackages: ["playwright", "unpdf", "mammoth", "@prisma/client", "node:sqlite"],
   async headers() {
     return [
       {
