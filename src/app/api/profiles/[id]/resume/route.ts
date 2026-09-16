@@ -9,7 +9,15 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const profile = await readProfile(id);
+  let profile;
+  try {
+    profile = await readProfile(id);
+  } catch (error) {
+    if (error instanceof Error && error.name === "ProfileNotFound") {
+      return Response.json({ error: "Profile not found" }, { status: 404 });
+    }
+    throw error;
+  }
   const kind = request.nextUrl.searchParams.get("kind") || "original";
   const blobKind = kind === "tailored" ? "tailored" : "resume";
   const file = await dbLoadBlob(profile.id, blobKind) || (blobKind === "tailored" ? await dbLoadBlob(profile.id, "resume") : null);
