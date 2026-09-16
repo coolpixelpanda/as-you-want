@@ -63,20 +63,16 @@ function applyBody(current: Profile, body: Record<string, unknown>): Profile {
   };
 }
 
-export function profileFromBody(current: Profile, body: Record<string, unknown>) {
-  return applyBody(current, body);
-}
-
 export async function GET(request: NextRequest) {
   const id = request.nextUrl.searchParams.get("id") || undefined;
-  return Response.json(readProfile(id));
+  return Response.json(await readProfile(id));
 }
 
 export async function PUT(request: NextRequest) {
   const id = request.nextUrl.searchParams.get("id") || undefined;
   const body = (await request.json()) as Record<string, unknown>;
-  const current = readProfile(id);
+  const current = await readProfile(id);
   const next = applyBody(current, body);
-  writeProfile(next, { replaceAnswers: true });
-  return Response.json({ ok: true, profile: readProfile(next.id), id: next.id });
+  await writeProfile(next, { replaceAnswers: true });
+  return Response.json({ ok: true, profile: await readProfile(next.id), id: next.id });
 }

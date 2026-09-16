@@ -14,7 +14,7 @@ export function profileCompleteness(profile: FullProfile) {
     profile.phone,
     profile.workAuthorizedUs,
     profile.requiresSponsorship,
-    profile.resumePath,
+    profile.resumePath || profile.resumeText,
   ];
   const filled = required.filter((v) => Boolean(v && String(v).trim())).length;
   return {
@@ -29,7 +29,7 @@ export function profileCompleteness(profile: FullProfile) {
       !profile.phone && "Phone",
       !profile.workAuthorizedUs && "Work authorization",
       !profile.requiresSponsorship && "Sponsorship",
-      !profile.resumePath && "Resume",
+      !profile.resumePath && !profile.resumeText && "Resume",
     ].filter(Boolean) as string[],
   };
 }

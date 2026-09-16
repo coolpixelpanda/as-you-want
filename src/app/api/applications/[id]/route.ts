@@ -8,7 +8,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const application = getApplication(id);
+  const application = await getApplication(id);
   if (!application) {
     return Response.json({ error: "Not found" }, { status: 404 });
   }
@@ -25,6 +25,6 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  deleteApplication(id);
+  await deleteApplication(id);
   return Response.json({ ok: true });
 }

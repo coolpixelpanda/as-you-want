@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { LoaderCircle, Plus, Trash2, Upload } from "lucide-react";
+import { US_STATES, normalizeStateCode } from "@/lib/us-states";
 
 type Exp = {
   company: string;
@@ -47,6 +48,36 @@ const emptyEdu = (): Edu => ({
   current: false,
 });
 
+function asExp(row: Record<string, unknown> | Exp): Exp {
+  return {
+    company: String(row.company || ""),
+    title: String(row.title || ""),
+    location: String(row.location || ""),
+    startMonth: String(row.startMonth || ""),
+    startYear: String(row.startYear || ""),
+    endMonth: String(row.endMonth || ""),
+    endYear: String(row.endYear || ""),
+    current: Boolean(row.current),
+    description: String(row.description || ""),
+  };
+}
+
+function asEdu(row: Record<string, unknown> | Edu): Edu {
+  return {
+    school: String(row.school || ""),
+    degree: String(row.degree || ""),
+    discipline: String(row.discipline || ""),
+    startYear: String(row.startYear || ""),
+    endYear: String(row.endYear || ""),
+    current: Boolean(row.current),
+  };
+}
+
+function listFrom(data: Record<string, unknown>, key: string) {
+  const value = data[key];
+  return Array.isArray(value) ? value : [];
+}
+
 function Field({
   label,
   children,
@@ -63,9 +94,9 @@ function Field({
 }
 
 const inputClass =
-  "h-11 w-full rounded-lg border border-line bg-paper px-3 outline-none ring-accent/30 focus:ring-2";
+  "h-11 w-full rounded-lg border border-line bg-paper px-3 text-ink outline-none ring-accent/30 focus:ring-2";
 const areaClass =
-  "min-h-28 w-full rounded-lg border border-line bg-paper px-3 py-2 outline-none ring-accent/30 focus:ring-2";
+  "min-h-28 w-full rounded-lg border border-line bg-paper px-3 py-2 text-ink outline-none ring-accent/30 focus:ring-2";
 
 export function ProfileForm({ profileId }: { profileId?: string }) {
   const [profile, setProfile] = useState<Record<string, unknown> | null>(null);
@@ -76,24 +107,63 @@ export function ProfileForm({ profileId }: { profileId?: string }) {
   const [saving, setSaving] = useState(false);
   const [parsing, setParsing] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const loadGen = useRef(0);
 
   const idQuery = profileId ? `?id=${encodeURIComponent(profileId)}` : "";
 
-  function applyProfile(data: Record<string, unknown>) {
-    setProfile(data);
-    const nextExp = Array.isArray(data.experiences) ? (data.experiences as Exp[]) : [];
-    const nextEdu = Array.isArray(data.educations) ? (data.educations as Edu[]) : [];
-    const nextAns = Array.isArray(data.answers) ? (data.answers as Saved[]) : [];
-    setExperiences(nextExp.length ? nextExp : [emptyExp()]);
-    setEducations(nextEdu.length ? nextEdu : [emptyEdu()]);
+  function applyProfile(data: Record<string, unknown>, source: "load" | "parse" | "save" = "load") {
+    if (!data || typeof data !== "object") return;
+    const nextExp = listFrom(data, "experiences").map((row) => asExp(row as Record<string, unknown>));
+    const nextEdu = listFrom(data, "educations").map((row) => asEdu(row as Record<string, unknown>));
+    const nextAns = listFrom(data, "answers") as Saved[];
+    const filledExp = nextExp.filter((row) => row.company || row.title);
+    const filledEdu = nextEdu.filter((row) => row.school);
+    setProfile({
+      ...data,
+      state: normalizeStateCode(String(data.state || "")),
+    });
+    setExperiences((prev) => {
+      const prevFilled = prev.filter((row) => row.company || row.title);
+      if (source === "load" && prevFilled.length && filledExp.length < prevFilled.length) {
+        return prev;
+      }
+      if (filledExp.length) return filledExp;
+      return source === "parse" ? prevFilled : [emptyExp()];
+    });
+    setEducations((prev) => {
+      const prevFilled = prev.filter((row) => row.school);
+      if (source === "load" && prevFilled.length && filledEdu.length < prevFilled.length) {
+        return prev;
+      }
+      if (filledEdu.length) return filledEdu;
+      return source === "parse" ? prevFilled : [emptyEdu()];
+    });
     setAnswers(nextAns.length ? nextAns : [{ question: "", answer: "" }]);
   }
 
   useEffect(() => {
-    fetch(`/api/profile${idQuery}`)
+    const gen = ++loadGen.current;
+    const cached = profileId ? sessionStorage.getItem(`joblink-parsed-${profileId}`) : "";
+    if (cached) {
+      try {
+        applyProfile(JSON.parse(cached) as Record<string, unknown>, "parse");
+      } catch {
+        /* ignore bad cache */
+      }
+      sessionStorage.removeItem(`joblink-parsed-${profileId}`);
+    }
+    const ac = new AbortController();
+    fetch(`/api/profile${idQuery}`, { signal: ac.signal })
       .then((r) => r.json())
-      .then(applyProfile);
-  }, [idQuery]);
+      .then((data) => {
+        if (gen !== loadGen.current) return;
+        applyProfile(data as Record<string, unknown>, "load");
+      })
+      .catch(() => {
+        /* aborted or network */
+      });
+    return () => ac.abort();
+  }, [idQuery, profileId]);
 
   function set(key: string, value: unknown) {
     setProfile((p) => ({ ...(p || {}), [key]: value }));
@@ -111,7 +181,20 @@ export function ProfileForm({ profileId }: { profileId?: string }) {
     try {
       const res = await fetch("/api/profile/resume", { method: "POST", body: form });
       const data = await res.json();
-      if (data.profile) applyProfile(data.profile);
+      if (data.profile) {
+        loadGen.current += 1;
+        applyProfile(
+          {
+            ...data.profile,
+            experiences: data.profile.experiences?.length ? data.profile.experiences : data.experiences,
+            educations: data.profile.educations?.length ? data.profile.educations : data.educations,
+          },
+          kind === "resume" ? "parse" : "save",
+        );
+        if (kind === "resume") {
+          requestAnimationFrame(() => document.getElementById("experience")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+        }
+      }
       else if (kind === "resume") set("resumePath", data.path);
       else if (kind === "tailored") set("tailoredResumePath", data.path);
       else set("coverLetterPath", data.path);
@@ -141,7 +224,17 @@ export function ProfileForm({ profileId }: { profileId?: string }) {
         body: JSON.stringify({ profileId }),
       });
       const data = await res.json();
-      if (data.profile) applyProfile(data.profile);
+      if (data.profile) {
+        loadGen.current += 1;
+        applyProfile(
+          {
+            ...data.profile,
+            experiences: data.profile.experiences?.length ? data.profile.experiences : data.experiences,
+            educations: data.profile.educations?.length ? data.profile.educations : data.educations,
+          },
+          "parse",
+        );
+      }
       setStatus(data.error || data.message || "Parsed.");
     } catch {
       setStatus("Could not parse the resume.");
@@ -165,7 +258,7 @@ export function ProfileForm({ profileId }: { profileId?: string }) {
       }),
     });
     const data = await res.json();
-    if (data.profile) applyProfile(data.profile);
+    if (data.profile) applyProfile(data.profile, "save");
     setSaving(false);
     setStatus(res.ok ? "Saved." : data.error || "Could not save.");
   }
@@ -290,8 +383,25 @@ export function ProfileForm({ profileId }: { profileId?: string }) {
           <Field label="City">
             <input className={inputClass} value={String(profile.city || "")} onChange={(e) => set("city", e.target.value)} />
           </Field>
-          <Field label="State / region">
-            <input className={inputClass} value={String(profile.state || "")} onChange={(e) => set("state", e.target.value)} />
+          <Field label="State">
+            <select
+              className={inputClass}
+              value={normalizeStateCode(String(profile.state || ""))}
+              onChange={(e) => {
+                const code = e.target.value;
+                const named = US_STATES.find((row) => row.code === code);
+                set("state", code);
+                const city = String(profile.city || "");
+                if (city && named) set("locationLine", `${city}, ${named.name}, United States`);
+              }}
+            >
+              <option value="">Select a state</option>
+              {US_STATES.map((row) => (
+                <option key={row.code} value={row.code}>
+                  {row.name}
+                </option>
+              ))}
+            </select>
           </Field>
           <Field label="Postal code">
             <input className={inputClass} value={String(profile.postalCode || "")} onChange={(e) => set("postalCode", e.target.value)} />
@@ -403,28 +513,35 @@ export function ProfileForm({ profileId }: { profileId?: string }) {
         </div>
       </section>
 
-      <section className="rounded-2xl border border-line bg-card p-6">
+      <section id="experience" className="rounded-2xl border border-line bg-card p-6">
         <div className="flex items-center justify-between">
           <h2 className="font-serif text-2xl">Experience</h2>
           <button type="button" className="inline-flex items-center gap-1 text-sm text-accent" onClick={() => setExperiences((rows) => [...rows, emptyExp()])}>
             <Plus size={14} /> Add
           </button>
         </div>
+        <p className="mt-1 text-sm text-muted">
+          {experiences.filter((row) => row.company || row.title).length
+            ? `${experiences.filter((row) => row.company || row.title).length} role(s) from the resume.`
+            : "Upload a resume to fill every job listed there."}
+        </p>
         <div className="mt-4 space-y-6">
           {experiences.map((row, i) => (
-            <div key={i} className="rounded-xl border border-line p-4">
+            <div key={`${row.company}-${row.title}-${i}`} className="rounded-xl border border-line p-4">
               <div className="grid gap-3 sm:grid-cols-2">
-                <input className={inputClass} placeholder="Company" value={row.company} onChange={(e) => setExperiences(patch(experiences, i, { company: e.target.value }))} />
-                <input className={inputClass} placeholder="Title" value={row.title} onChange={(e) => setExperiences(patch(experiences, i, { title: e.target.value }))} />
-                <input className={inputClass} placeholder="Location" value={row.location} onChange={(e) => setExperiences(patch(experiences, i, { location: e.target.value }))} />
+                <input className={inputClass} placeholder="Company" value={row.company || ""} onChange={(e) => setExperiences(patch(experiences, i, { company: e.target.value }))} />
+                <input className={inputClass} placeholder="Title" value={row.title || ""} onChange={(e) => setExperiences(patch(experiences, i, { title: e.target.value }))} />
+                <input className={inputClass} placeholder="Location" value={row.location || ""} onChange={(e) => setExperiences(patch(experiences, i, { location: e.target.value }))} />
                 <label className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" checked={row.current} onChange={(e) => setExperiences(patch(experiences, i, { current: e.target.checked }))} />
+                  <input type="checkbox" checked={Boolean(row.current)} onChange={(e) => setExperiences(patch(experiences, i, { current: e.target.checked }))} />
                   Current role
                 </label>
-                <input className={inputClass} placeholder="Start year" value={row.startYear} onChange={(e) => setExperiences(patch(experiences, i, { startYear: e.target.value }))} />
-                <input className={inputClass} placeholder="End year" value={row.endYear} onChange={(e) => setExperiences(patch(experiences, i, { endYear: e.target.value }))} />
+                <input className={inputClass} placeholder="Start month" value={row.startMonth || ""} onChange={(e) => setExperiences(patch(experiences, i, { startMonth: e.target.value }))} />
+                <input className={inputClass} placeholder="Start year" value={row.startYear || ""} onChange={(e) => setExperiences(patch(experiences, i, { startYear: e.target.value }))} />
+                <input className={inputClass} placeholder="End month" value={row.endMonth || ""} onChange={(e) => setExperiences(patch(experiences, i, { endMonth: e.target.value }))} />
+                <input className={inputClass} placeholder="End year" value={row.endYear || ""} onChange={(e) => setExperiences(patch(experiences, i, { endYear: e.target.value }))} />
               </div>
-              <textarea className={`${areaClass} mt-3`} placeholder="What you did" value={row.description} onChange={(e) => setExperiences(patch(experiences, i, { description: e.target.value }))} />
+              <textarea className={`${areaClass} mt-3`} placeholder="What you did" value={row.description || ""} onChange={(e) => setExperiences(patch(experiences, i, { description: e.target.value }))} />
               <button type="button" className="mt-2 text-sm text-bad" onClick={() => setExperiences(experiences.filter((_, idx) => idx !== i))}>
                 <Trash2 size={12} className="mr-1 inline" /> Remove
               </button>
@@ -433,20 +550,26 @@ export function ProfileForm({ profileId }: { profileId?: string }) {
         </div>
       </section>
 
-      <section className="rounded-2xl border border-line bg-card p-6">
+      <section id="education" className="rounded-2xl border border-line bg-card p-6">
         <div className="flex items-center justify-between">
           <h2 className="font-serif text-2xl">Education</h2>
           <button type="button" className="inline-flex items-center gap-1 text-sm text-accent" onClick={() => setEducations((rows) => [...rows, emptyEdu()])}>
             <Plus size={14} /> Add
           </button>
         </div>
+        <p className="mt-1 text-sm text-muted">
+          {educations.filter((row) => row.school).length
+            ? `${educations.filter((row) => row.school).length} school(s) from the resume.`
+            : "Upload a resume to fill every school listed there."}
+        </p>
         <div className="mt-4 space-y-4">
           {educations.map((row, i) => (
-            <div key={i} className="grid gap-3 rounded-xl border border-line p-4 sm:grid-cols-2">
-              <input className={inputClass} placeholder="School" value={row.school} onChange={(e) => setEducations(patch(educations, i, { school: e.target.value }))} />
-              <input className={inputClass} placeholder="Degree" value={row.degree} onChange={(e) => setEducations(patch(educations, i, { degree: e.target.value }))} />
-              <input className={inputClass} placeholder="Discipline / major" value={row.discipline} onChange={(e) => setEducations(patch(educations, i, { discipline: e.target.value }))} />
-              <input className={inputClass} placeholder="End year" value={row.endYear} onChange={(e) => setEducations(patch(educations, i, { endYear: e.target.value }))} />
+            <div key={`${row.school}-${row.degree}-${i}`} className="grid gap-3 rounded-xl border border-line p-4 sm:grid-cols-2">
+              <input className={inputClass} placeholder="School" value={row.school || ""} onChange={(e) => setEducations(patch(educations, i, { school: e.target.value }))} />
+              <input className={inputClass} placeholder="Degree" value={row.degree || ""} onChange={(e) => setEducations(patch(educations, i, { degree: e.target.value }))} />
+              <input className={inputClass} placeholder="Discipline / major" value={row.discipline || ""} onChange={(e) => setEducations(patch(educations, i, { discipline: e.target.value }))} />
+              <input className={inputClass} placeholder="Start year" value={row.startYear || ""} onChange={(e) => setEducations(patch(educations, i, { startYear: e.target.value }))} />
+              <input className={inputClass} placeholder="End year" value={row.endYear || ""} onChange={(e) => setEducations(patch(educations, i, { endYear: e.target.value }))} />
             </div>
           ))}
         </div>

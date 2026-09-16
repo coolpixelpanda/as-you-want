@@ -10,17 +10,17 @@ import {
 export const runtime = "nodejs";
 
 export async function GET() {
-  pruneBareChoiceAnswers();
+  await pruneBareChoiceAnswers();
   return Response.json({
-    saved: listAllSavedAnswers(),
-    asked: listAskedApplicationQuestions(),
+    saved: await listAllSavedAnswers(),
+    asked: await listAskedApplicationQuestions(),
   });
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const saved = upsertSavedAnswer(
+    const saved = await upsertSavedAnswer(
       String(body.profileId || ""),
       String(body.question || ""),
       String(body.answer || ""),
@@ -41,7 +41,7 @@ export async function DELETE(request: NextRequest) {
   if (!profileId || !id) {
     return Response.json({ error: "Missing id" }, { status: 400 });
   }
-  deleteSavedAnswer(profileId, id);
+  await deleteSavedAnswer(profileId, id);
   return Response.json({ ok: true });
 }
 

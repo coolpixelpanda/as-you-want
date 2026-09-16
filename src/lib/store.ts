@@ -1,7 +1,18 @@
-import fs from "node:fs";
-import path from "node:path";
-import crypto from "node:crypto";
-import { appDataDir } from "@/lib/paths";
+import {
+  dbCreateApplication,
+  dbCreateProfile,
+  dbDeleteApplication,
+  dbDeleteProfile,
+  dbGetActiveProfileId,
+  dbGetApplication,
+  dbListApplications,
+  dbListProfiles,
+  dbReadProfile,
+  dbSetActiveProfile,
+  dbUpdateApplication,
+  dbWriteProfile,
+  profileHasResume,
+} from "@/lib/database";
 import {
   dedupeAnswers,
   deleteAnswer,
@@ -13,234 +24,10 @@ import {
   replaceAnswersForProfile,
   upsertAnswer,
 } from "@/lib/answers-db";
+import { defaultProfile, newId, type Application, type Education, type Experience, type Profile, type SavedAnswer } from "@/lib/store-types";
 
-export type Experience = {
-  id: string;
-  company: string;
-  title: string;
-  location: string;
-  startMonth: string;
-  startYear: string;
-  endMonth: string;
-  endYear: string;
-  current: boolean;
-  description: string;
-  sortOrder: number;
-};
-
-export type Education = {
-  id: string;
-  school: string;
-  degree: string;
-  discipline: string;
-  startYear: string;
-  endYear: string;
-  current: boolean;
-  sortOrder: number;
-};
-
-export type SavedAnswer = {
-  id: string;
-  question: string;
-  answer: string;
-  source?: string;
-  createdAt?: string;
-};
-
-export type Profile = {
-  id: string;
-  name: string;
-  firstName: string;
-  lastName: string;
-  preferredName: string;
-  pronouns: string;
-  email: string;
-  phone: string;
-  phoneCountry: string;
-  street: string;
-  city: string;
-  state: string;
-  postalCode: string;
-  country: string;
-  locationLine: string;
-  linkedinUrl: string;
-  githubUrl: string;
-  portfolioUrl: string;
-  websiteUrl: string;
-  currentCompany: string;
-  currentTitle: string;
-  workAuthorizedUs: string;
-  residesInUs: string;
-  requiresSponsorship: string;
-  salaryAmount: string;
-  salaryCurrency: string;
-  salaryPeriod: string;
-  howHeard: string;
-  coverLetter: string;
-  additionalInfo: string;
-  resumePath: string;
-  resumeText: string;
-  resumeFileName: string;
-  tailoredResumePath: string;
-  coverLetterPath: string;
-  gender: string;
-  race: string;
-  disability: string;
-  veteran: string;
-  willingToRelocate: string;
-  availableStartDate: string;
-  formerEmployee: string;
-  relativesAtCompany: string;
-  autoSubmit: boolean;
-  headedBrowser: boolean;
-  fillAndSubmit: boolean;
-  experiences: Experience[];
-  educations: Education[];
-  answers: SavedAnswer[];
-  updatedAt: string;
-};
-
-export type Application = {
-  id: string;
-  profileId: string;
-  jobUrl: string;
-  applyUrl: string;
-  ats: string;
-  company: string;
-  title: string;
-  location: string;
-  status: string;
-  questions: string;
-  mappedAnswers: string;
-  logs: string;
-  error: string | null;
-  confirmationUrl: string | null;
-  confirmationText: string | null;
-  screenshotPath: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-function dataDir() {
-  return appDataDir();
-}
-const profileFile = () => path.join(dataDir(), "profile.json");
-const profilesFile = () => path.join(dataDir(), "profiles.json");
-const appsFile = () => path.join(dataDir(), "applications.json");
-
-type ProfileStore = {
-  activeId: string;
-  profiles: Profile[];
-};
-
-function ensureDir() {
-  fs.mkdirSync(dataDir(), { recursive: true });
-}
-
-export function defaultProfile(partial: Partial<Profile> = {}): Profile {
-  return {
-    id: partial.id || crypto.randomUUID(),
-    name: partial.name || "Profile",
-    firstName: "",
-    lastName: "",
-    preferredName: "",
-    pronouns: "",
-    email: "",
-    phone: "",
-    phoneCountry: "United States",
-    street: "",
-    city: "",
-    state: "",
-    postalCode: "",
-    country: "United States",
-    locationLine: "",
-    linkedinUrl: "",
-    githubUrl: "",
-    portfolioUrl: "",
-    websiteUrl: "",
-    currentCompany: "",
-    currentTitle: "",
-    workAuthorizedUs: "yes",
-    residesInUs: "yes",
-    requiresSponsorship: "no",
-    salaryAmount: "",
-    salaryCurrency: "USD",
-    salaryPeriod: "year",
-    howHeard: "LinkedIn",
-    coverLetter: "",
-    additionalInfo: "",
-    resumePath: "",
-    resumeText: "",
-    resumeFileName: "",
-    tailoredResumePath: "",
-    coverLetterPath: "",
-    gender: "decline",
-    race: "decline",
-    disability: "decline",
-    veteran: "decline",
-    willingToRelocate: "no",
-    availableStartDate: "",
-    formerEmployee: "no",
-    relativesAtCompany: "no",
-    autoSubmit: false,
-    headedBrowser: true,
-    fillAndSubmit: false,
-    experiences: [],
-    educations: [],
-    answers: [],
-    updatedAt: new Date().toISOString(),
-    ...partial,
-  };
-}
-
-function readProfileStore(): ProfileStore {
-  try {
-    return loadProfileStore();
-  } catch {
-    const profile = defaultProfile({ name: "Default profile" });
-    return { activeId: profile.id, profiles: [profile] };
-  }
-}
-
-function loadProfileStore(): ProfileStore {
-  ensureDir();
-  let store: ProfileStore;
-  if (fs.existsSync(profilesFile())) {
-    const raw = JSON.parse(fs.readFileSync(profilesFile(), "utf8")) as ProfileStore;
-    const profiles = (raw.profiles || []).map((p) => defaultProfile(p));
-    const activeId =
-      raw.activeId && profiles.some((p) => p.id === raw.activeId)
-        ? raw.activeId
-        : profiles[0]?.id;
-    if (!profiles.length) {
-      const profile = defaultProfile({ name: "Default profile" });
-      store = { activeId: profile.id, profiles: [profile] };
-      writeProfileStore(store);
-    } else {
-      store = { activeId: activeId || profiles[0].id, profiles };
-    }
-  } else if (fs.existsSync(profileFile())) {
-    const old = JSON.parse(fs.readFileSync(profileFile(), "utf8")) as Profile;
-    const profile = defaultProfile({
-      ...old,
-      id: old.id || "me",
-      name: `${old.firstName || "Default"} ${old.lastName || "profile"}`.trim(),
-    });
-    store = { activeId: profile.id, profiles: [profile] };
-    writeProfileStore(store);
-  } else {
-    const profile = defaultProfile({ name: "Default profile" });
-    store = { activeId: profile.id, profiles: [profile] };
-    writeProfileStore(store);
-  }
-  migrateAnswersOnce(store.profiles);
-  return store;
-}
-
-function writeProfileStore(store: ProfileStore) {
-  ensureDir();
-  fs.writeFileSync(profilesFile(), JSON.stringify(store, null, 2));
-}
+export type { Application, Education, Experience, Profile, SavedAnswer };
+export { defaultProfile, newId };
 
 function yesNo(value: string) {
   return value === "no" ? "No" : "Yes";
@@ -271,12 +58,12 @@ export function defaultAnswersFromProfile(profile: Profile) {
   return rows;
 }
 
-function syncDefaultAnswers(profile: Profile) {
-  const bank = listAnswers(profile.id);
+async function syncDefaultAnswers(profile: Profile) {
+  const bank = await listAnswers(profile.id);
   for (const row of defaultAnswersFromProfile(profile)) {
     if (findExistingAnswer(row.question, bank)) continue;
     try {
-      upsertAnswer({
+      await upsertAnswer({
         profileId: profile.id,
         question: row.question,
         answer: row.answer,
@@ -286,36 +73,20 @@ function syncDefaultAnswers(profile: Profile) {
       /* ignore */
     }
   }
-  dedupeAnswers(profile.id);
+  await dedupeAnswers(profile.id);
 }
 
-let answersMigrated = false;
-function migrateAnswersOnce(profiles: Profile[]) {
-  if (answersMigrated) return;
-  answersMigrated = true;
-  try {
-    importProfileAnswers(profiles);
-    pruneBareChoiceAnswersDb();
-    for (const profile of profiles) syncDefaultAnswers(profile);
-    dedupeAnswers();
-  } catch {
-    /* storage can be unavailable on the first serverless boot */
-  }
+export async function listProfiles() {
+  return dbListProfiles();
 }
 
-export function listProfiles() {
-  return readProfileStore().profiles;
+export async function getActiveProfileId() {
+  return dbGetActiveProfileId();
 }
 
-export function getActiveProfileId() {
-  return readProfileStore().activeId;
-}
-
-export function readProfile(id?: string): Profile {
-  const store = readProfileStore();
-  const found = store.profiles.find((p) => p.id === (id || store.activeId));
-  const profile = found || store.profiles[0];
-  const dbAnswers = listAnswers(profile.id);
+export async function readProfile(id?: string): Promise<Profile> {
+  const profile = await dbReadProfile(id);
+  const dbAnswers = await listAnswers(profile.id);
   profile.answers = dbAnswers.map((row) => ({
     id: row.id,
     question: row.question,
@@ -326,12 +97,7 @@ export function readProfile(id?: string): Profile {
   return profile;
 }
 
-export function writeProfile(profile: Profile, opts?: { replaceAnswers?: boolean }) {
-  const store = readProfileStore();
-  profile.updatedAt = new Date().toISOString();
-  if (!profile.name) {
-    profile.name = `${profile.firstName} ${profile.lastName}`.trim() || "Profile";
-  }
+export async function writeProfile(profile: Profile, opts?: { replaceAnswers?: boolean }) {
   if (opts?.replaceAnswers) {
     profile.answers = mergeLatestAnswers([
       ...(profile.answers || []),
@@ -344,45 +110,29 @@ export function writeProfile(profile: Profile, opts?: { replaceAnswers?: boolean
       createdAt: new Date().toISOString(),
     }));
   }
-  const index = store.profiles.findIndex((p) => p.id === profile.id);
-  if (index >= 0) store.profiles[index] = defaultProfile(profile);
-  else store.profiles.push(defaultProfile(profile));
-  writeProfileStore(store);
+  await dbWriteProfile(profile);
   if (opts?.replaceAnswers) {
-    replaceAnswersForProfile(profile.id, profile.answers);
+    await replaceAnswersForProfile(profile.id, profile.answers);
   } else {
-    importProfileAnswers([profile]);
-    syncDefaultAnswers(profile);
+    await importProfileAnswers([profile]);
+    await syncDefaultAnswers(profile);
   }
 }
 
-export function createProfile(name = "New profile") {
-  const store = readProfileStore();
-  const profile = defaultProfile({ name });
-  store.profiles.push(profile);
-  store.activeId = profile.id;
-  writeProfileStore(store);
-  syncDefaultAnswers(profile);
-  return profile;
+export async function createProfile(name = "New profile") {
+  const profile = await dbCreateProfile(name);
+  await syncDefaultAnswers(profile);
+  return readProfile(profile.id);
 }
 
-export function deleteProfile(id: string) {
-  const store = readProfileStore();
-  if (store.profiles.length <= 1) {
-    throw new Error("Keep at least one profile.");
-  }
-  store.profiles = store.profiles.filter((p) => p.id !== id);
-  if (store.activeId === id) store.activeId = store.profiles[0].id;
-  writeProfileStore(store);
+export async function deleteProfile(id: string) {
+  await dbDeleteProfile(id);
 }
 
-export function setActiveProfile(id: string) {
-  const store = readProfileStore();
-  if (!store.profiles.some((p) => p.id === id)) {
-    throw new Error("Profile not found.");
-  }
-  store.activeId = id;
-  writeProfileStore(store);
+export async function setActiveProfile(id: string) {
+  const profiles = await listProfiles();
+  if (!profiles.some((p) => p.id === id)) throw new Error("Profile not found.");
+  await dbSetActiveProfile(id);
 }
 
 export function profileSummary(profile: Profile) {
@@ -393,7 +143,7 @@ export function profileSummary(profile: Profile) {
     lastName: profile.lastName,
     email: profile.email,
     currentTitle: profile.currentTitle,
-    hasResume: Boolean(profile.resumePath),
+    hasResume: profileHasResume(profile),
     hasTailoredResume: Boolean(profile.tailoredResumePath),
     updatedAt: profile.updatedAt,
   };
@@ -406,106 +156,32 @@ export function resumeDownloadName(profile: Profile, ext: string) {
   return last ? `${first}_${last}${suffix}` : `${first}${suffix}`;
 }
 
-function readApps(): Application[] {
-  ensureDir();
-  if (!fs.existsSync(appsFile())) {
-    fs.writeFileSync(appsFile(), "[]");
-    return [];
-  }
-  return JSON.parse(fs.readFileSync(appsFile(), "utf8"));
+export async function listApplications() {
+  return (await dbListApplications()).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
-function writeApps(apps: Application[]) {
-  ensureDir();
-  fs.writeFileSync(appsFile(), JSON.stringify(apps, null, 2));
+export async function getApplication(id: string) {
+  return dbGetApplication(id);
 }
 
-export function listApplications() {
-  return readApps().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+export async function createApplication(data: Partial<Application>) {
+  return dbCreateApplication(data);
 }
 
-export function getApplication(id: string) {
-  return readApps().find((app) => app.id === id) || null;
+export async function updateApplication(id: string, data: Record<string, unknown>) {
+  return dbUpdateApplication(id, data);
 }
 
-export function createApplication(data: Partial<Application>) {
-  const apps = readApps();
-  const now = new Date().toISOString();
-  const app: Application = {
-    id: crypto.randomUUID(),
-    profileId: "",
-    jobUrl: "",
-    applyUrl: "",
-    ats: "unknown",
-    company: "",
-    title: "",
-    location: "",
-    status: "queued",
-    questions: "[]",
-    mappedAnswers: "[]",
-    logs: "[]",
-    error: null,
-    confirmationUrl: null,
-    confirmationText: null,
-    screenshotPath: null,
-    createdAt: now,
-    updatedAt: now,
-    ...data,
-  };
-  apps.unshift(app);
-  writeApps(apps);
-  return app;
-}
-
-export function updateApplication(id: string, data: Record<string, unknown>) {
-  const apps = readApps();
-  const index = apps.findIndex((app) => app.id === id);
-  if (index < 0) return null;
-  apps[index] = {
-    ...apps[index],
-    ...data,
-    updatedAt: new Date().toISOString(),
-  } as Application;
-  writeApps(apps);
-  return apps[index];
-}
-
-export function deleteApplication(id: string) {
-  writeApps(readApps().filter((app) => app.id !== id));
-}
-
-export function newId() {
-  return crypto.randomUUID();
+export async function deleteApplication(id: string) {
+  await dbDeleteApplication(id);
 }
 
 function normQuestion(s: string) {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
-export function upsertSavedAnswer(
-  profileId: string,
-  question: string,
-  answer: string,
-  source = "extension",
-) {
-  const saved = upsertAnswer({ profileId, question, answer, source });
-  const profile = readProfile(profileId);
-  const match = profile.answers.find((row) => normQuestion(row.question) === normQuestion(saved.question));
-  if (match) {
-    match.id = saved.id;
-    match.answer = saved.answer;
-    match.source = saved.source;
-    match.createdAt = saved.updatedAt;
-  } else {
-    profile.answers.push({
-      id: saved.id,
-      question: saved.question,
-      answer: saved.answer,
-      source: saved.source,
-      createdAt: saved.updatedAt,
-    });
-  }
-  writeProfile(profile);
+export async function upsertSavedAnswer(profileId: string, question: string, answer: string, source = "extension") {
+  const saved = await upsertAnswer({ profileId, question, answer, source });
   return {
     id: saved.id,
     question: saved.question,
@@ -515,35 +191,23 @@ export function upsertSavedAnswer(
   };
 }
 
-export function deleteSavedAnswer(profileId: string, answerId: string) {
-  deleteAnswer(profileId, answerId);
-  const profile = readProfile(profileId);
-  profile.answers = profile.answers.filter((row) => row.id !== answerId);
-  writeProfile(profile);
+export async function deleteSavedAnswer(profileId: string, answerId: string) {
+  await deleteAnswer(profileId, answerId);
 }
 
-export function pruneBareChoiceAnswers() {
-  pruneBareChoiceAnswersDb();
-  dedupeAnswers();
-  for (const profile of listProfiles()) {
-    const next = (profile.answers || []).filter(
-      (row) => !/^(yes|no|true|false|y|n)$/i.test((row.question || "").trim()),
-    );
-    if (next.length !== (profile.answers || []).length) {
-      profile.answers = next;
-      writeProfile(profile);
-    }
-  }
+export async function pruneBareChoiceAnswers() {
+  await pruneBareChoiceAnswersDb();
+  await dedupeAnswers();
 }
 
-export function listAllSavedAnswers() {
+export async function listAllSavedAnswers() {
   const names = new Map(
-    listProfiles().map((profile) => [
+    (await listProfiles()).map((profile) => [
       profile.id,
       profile.name || `${profile.firstName} ${profile.lastName}`.trim() || "Profile",
     ]),
   );
-  return listAnswers()
+  return (await listAnswers())
     .map((row) => ({
       id: row.id,
       question: row.question,
@@ -556,8 +220,8 @@ export function listAllSavedAnswers() {
     .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
 }
 
-export function listAskedApplicationQuestions() {
-  const saved = new Set(listAllSavedAnswers().map((row) => normQuestion(row.question)));
+export async function listAskedApplicationQuestions() {
+  const saved = new Set((await listAllSavedAnswers()).map((row) => normQuestion(row.question)));
   const rows: {
     question: string;
     answer: string;
@@ -567,7 +231,7 @@ export function listAskedApplicationQuestions() {
     createdAt: string;
     saved: boolean;
   }[] = [];
-  for (const app of listApplications()) {
+  for (const app of await listApplications()) {
     let questions: { label?: string; question?: string; value?: string; answer?: string }[] = [];
     try {
       questions = JSON.parse(app.questions || "[]");

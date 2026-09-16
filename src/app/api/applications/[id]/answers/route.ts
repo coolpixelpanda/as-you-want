@@ -11,7 +11,7 @@ export async function PUT(
   const { id } = await params;
   const body = await request.json();
   const incoming = (body.answers || []) as MappedAnswer[];
-  const app = getApplication(id);
+  const app = await getApplication(id);
   if (!app) return Response.json({ error: "Not found" }, { status: 404 });
 
   const current = JSON.parse(app.mappedAnswers || "[]") as MappedAnswer[];
@@ -27,7 +27,7 @@ export async function PUT(
     };
   });
   const missing = next.filter((a) => a.required && !a.value);
-  updateApplication(id, {
+  await updateApplication(id, {
     mappedAnswers: JSON.stringify(next),
     status: missing.length ? "needs_input" : "ready",
     error: missing.length

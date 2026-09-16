@@ -21,7 +21,7 @@ export async function OPTIONS() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const profile = readProfile(String(body.profileId || ""));
+    const profile = await readProfile(String(body.profileId || ""));
     const questions = (body.fields || []) as FormQuestion[];
     const mapped = await mapQuestions({
       questions,

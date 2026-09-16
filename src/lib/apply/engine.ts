@@ -13,15 +13,15 @@ import type { ApplyLog, FormQuestion, MappedAnswer } from "@/lib/types";
 const running = new Set<string>();
 
 async function appendLog(id: string, level: ApplyLog["level"], message: string) {
-  const app = getApplication(id);
+  const app = await getApplication(id);
   if (!app) return;
   const logs = JSON.parse(app.logs || "[]") as ApplyLog[];
   logs.push({ t: new Date().toISOString(), level, message });
-  updateApplication(id, { logs: JSON.stringify(logs.slice(-200)) });
+  await updateApplication(id, { logs: JSON.stringify(logs.slice(-200)) });
 }
 
 async function setStatus(id: string, data: Record<string, unknown>) {
-  updateApplication(id, data);
+  await updateApplication(id, data);
 }
 
 async function launchBrowser(headed: boolean): Promise<{ browser: Browser; page: Page }> {
@@ -43,7 +43,7 @@ export async function prepareApplication(id: string) {
   if (running.has(id)) return;
   running.add(id);
   try {
-    const app = getApplication(id);
+    const app = await getApplication(id);
     if (!app) return;
     const profile = await getProfile();
     const completeness = profileCompleteness(profile);
@@ -150,7 +150,7 @@ export async function submitPreparedApplication(
   let browser: Browser | undefined;
   let keepOpen = false;
   try {
-    const app = getApplication(id);
+    const app = await getApplication(id);
     if (!app) return;
     const profile = await getProfile();
     const answers = JSON.parse(app.mappedAnswers || "[]") as MappedAnswer[];

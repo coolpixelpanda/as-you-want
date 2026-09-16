@@ -1,0 +1,161 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model AppMeta {
+  key   String @id
+  value String
+
+  @@map("app_meta")
+}
+
+model Profile {
+  id                   String   @id
+  name                 String   @default("Profile")
+  firstName            String   @default("") @map("first_name")
+  lastName             String   @default("") @map("last_name")
+  preferredName        String   @default("") @map("preferred_name")
+  pronouns             String   @default("")
+  email                String   @default("")
+  phone                String   @default("")
+  phoneCountry         String   @default("United States") @map("phone_country")
+  street               String   @default("")
+  city                 String   @default("")
+  state                String   @default("")
+  postalCode           String   @default("") @map("postal_code")
+  country              String   @default("United States")
+  locationLine         String   @default("") @map("location_line")
+  linkedinUrl          String   @default("") @map("linkedin_url")
+  githubUrl            String   @default("") @map("github_url")
+  portfolioUrl         String   @default("") @map("portfolio_url")
+  websiteUrl           String   @default("") @map("website_url")
+  currentCompany       String   @default("") @map("current_company")
+  currentTitle         String   @default("") @map("current_title")
+  workAuthorizedUs     String   @default("yes") @map("work_authorized_us")
+  residesInUs          String   @default("yes") @map("resides_in_us")
+  requiresSponsorship  String   @default("no") @map("requires_sponsorship")
+  salaryAmount         String   @default("") @map("salary_amount")
+  salaryCurrency       String   @default("USD") @map("salary_currency")
+  salaryPeriod         String   @default("year") @map("salary_period")
+  howHeard             String   @default("LinkedIn") @map("how_heard")
+  coverLetter          String   @default("") @map("cover_letter")
+  additionalInfo       String   @default("") @map("additional_info")
+  resumePath           String   @default("") @map("resume_path")
+  resumeText           String   @default("") @map("resume_text")
+  resumeFileName       String   @default("") @map("resume_file_name")
+  tailoredResumePath   String   @default("") @map("tailored_resume_path")
+  coverLetterPath      String   @default("") @map("cover_letter_path")
+  resumeFileId         String   @default("") @map("resume_file_id")
+  tailoredResumeFileId String   @default("") @map("tailored_resume_file_id")
+  coverLetterFileId    String   @default("") @map("cover_letter_file_id")
+  gender               String   @default("decline")
+  race                 String   @default("decline")
+  disability           String   @default("decline")
+  veteran              String   @default("decline")
+  willingToRelocate    String   @default("no") @map("willing_to_relocate")
+  availableStartDate   String   @default("") @map("available_start_date")
+  formerEmployee       String   @default("no") @map("former_employee")
+  relativesAtCompany   String   @default("no") @map("relatives_at_company")
+  autoSubmit           Boolean  @default(false) @map("auto_submit")
+  headedBrowser        Boolean  @default(true) @map("headed_browser")
+  fillAndSubmit        Boolean  @default(false) @map("fill_and_submit")
+  createdAt            String   @map("created_at")
+  updatedAt            String   @map("updated_at")
+  experiences          Experience[]
+  educations           Education[]
+  answers              SavedAnswer[]
+  files                StoredFile[]
+
+  @@map("profiles")
+}
+
+model Experience {
+  id          String  @id
+  profileId   String  @map("profile_id")
+  company     String  @default("")
+  title       String  @default("")
+  location    String  @default("")
+  startMonth  String  @default("") @map("start_month")
+  startYear   String  @default("") @map("start_year")
+  endMonth    String  @default("") @map("end_month")
+  endYear     String  @default("") @map("end_year")
+  current     Boolean @default(false)
+  description String  @default("")
+  sortOrder   Int     @default(0) @map("sort_order")
+  profile     Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@map("experiences")
+}
+
+model Education {
+  id         String  @id
+  profileId  String  @map("profile_id")
+  school     String  @default("")
+  degree     String  @default("")
+  discipline String  @default("")
+  startYear  String  @default("") @map("start_year")
+  endYear    String  @default("") @map("end_year")
+  current    Boolean @default(false)
+  sortOrder  Int     @default(0) @map("sort_order")
+  profile    Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@map("educations")
+}
+
+model SavedAnswer {
+  id           String  @id
+  profileId    String  @map("profile_id")
+  question     String
+  questionNorm String  @map("question_norm")
+  answer       String
+  source       String  @default("extension")
+  createdAt    String  @map("created_at")
+  updatedAt    String  @map("updated_at")
+  profile      Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId, questionNorm])
+  @@map("saved_answers")
+}
+
+model Application {
+  id                String  @id
+  profileId         String  @default("") @map("profile_id")
+  jobUrl            String  @default("") @map("job_url")
+  applyUrl          String  @default("") @map("apply_url")
+  ats               String  @default("unknown")
+  company           String  @default("")
+  title             String  @default("")
+  location          String  @default("")
+  status            String  @default("queued")
+  questions         String  @default("[]")
+  mappedAnswers     String  @default("[]") @map("mapped_answers")
+  logs              String  @default("[]")
+  error             String?
+  confirmationUrl   String? @map("confirmation_url")
+  confirmationText  String? @map("confirmation_text")
+  screenshotPath    String? @map("screenshot_path")
+  createdAt         String  @map("created_at")
+  updatedAt         String  @map("updated_at")
+
+  @@map("applications")
+}
+
+model StoredFile {
+  id        String  @id
+  profileId String  @map("profile_id")
+  kind      String
+  filename  String
+  mime      String
+  bytes     Bytes
+  createdAt String  @map("created_at")
+  profile   Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId, kind])
+  @@map("files")
+}

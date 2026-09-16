@@ -1,7 +1,6 @@
-import fs from "node:fs";
-import path from "node:path";
 import { NextRequest } from "next/server";
 import { readProfile, resumeDownloadName } from "@/lib/store";
+import { dbLoadBlob } from "@/lib/database";
 
 export const runtime = "nodejs";
 
@@ -10,32 +9,25 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const profile = readProfile(id);
+  const profile = await readProfile(id);
   const kind = request.nextUrl.searchParams.get("kind") || "original";
-  const filePath =
-    kind === "tailored"
-      ? profile.tailoredResumePath || profile.resumePath
-      : profile.resumePath;
-  if (!profile || !filePath || !fs.existsSync(filePath)) {
+  const blobKind = kind === "tailored" ? "tailored" : "resume";
+  const file = await dbLoadBlob(profile.id, blobKind) || (blobKind === "tailored" ? await dbLoadBlob(profile.id, "resume") : null);
+  if (!file?.bytes?.length) {
     return Response.json(
       { error: kind === "tailored" ? "No tailored resume on this profile." : "No resume on this profile." },
       { status: 404 },
     );
   }
-  const file = fs.readFileSync(filePath);
-  const ext = path.extname(filePath).toLowerCase() || ".pdf";
-  const type =
-    ext === ".pdf"
-      ? "application/pdf"
-      : ext === ".docx"
-        ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        : ext === ".doc"
-          ? "application/msword"
-          : "application/octet-stream";
+  const ext = file.filename.toLowerCase().endsWith(".docx")
+    ? ".docx"
+    : file.filename.toLowerCase().endsWith(".doc")
+      ? ".doc"
+      : ".pdf";
   const filename = resumeDownloadName(profile, ext);
-  return new Response(new Uint8Array(file), {
+  return new Response(new Uint8Array(file.bytes), {
     headers: {
-      "Content-Type": type,
+      "Content-Type": file.mime || "application/pdf",
       "Content-Disposition": `attachment; filename="${filename}"`,
       "Access-Control-Allow-Origin": "*",
     },

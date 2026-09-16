@@ -4,9 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3001 --webpack",
-    "build": "next build",
+    "build": "node scripts/prisma-generate.mjs && node scripts/prisma-migrate.mjs && next build",
+    "postinstall": "node scripts/prisma-generate.mjs",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db:generate": "node scripts/prisma-generate.mjs",
+    "db:push": "node scripts/prisma-migrate.mjs"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

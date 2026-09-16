@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 export async function GET() {
-  return Response.json(listApplications());
+  return Response.json(await listApplications());
 }
 
 export async function POST(request: NextRequest) {
@@ -24,8 +24,8 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "That does not look like a valid URL." }, { status: 400 });
   }
 
-  const application = createApplication({
-    profileId: getActiveProfileId(),
+  const application = await createApplication({
+    profileId: await getActiveProfileId(),
     jobUrl,
     applyUrl: detected.applyUrl,
     ats: detected.ats,

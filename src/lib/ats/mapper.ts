@@ -127,6 +127,38 @@ export function deterministicMap(
   if (label.includes("current title") || label.includes("current role")) {
     return profile.currentTitle ? make(profile.currentTitle) : null;
   }
+  const latestJob = profile.experiences.find((row) => row.current) || profile.experiences[0];
+  const latestSchool = profile.educations[0];
+  if (
+    (label.includes("company") || label.includes("employer") || label.includes("organization")) &&
+    !label.includes("website") &&
+    !label.includes("hear")
+  ) {
+    const value = profile.currentCompany || latestJob?.company || "";
+    return value ? make(value) : null;
+  }
+  if (
+    label.includes("job title") ||
+    label.includes("position title") ||
+    label.includes("role title") ||
+    (label.includes("title") && (label.includes("job") || label.includes("position") || question.section === "experience"))
+  ) {
+    const value = profile.currentTitle || latestJob?.title || "";
+    return value ? make(value) : null;
+  }
+  if (label.includes("years of experience") || label.includes("year of experience") || label.includes("how many years")) {
+    const years = profile.experiences
+      .map((row) => Number(row.startYear))
+      .filter((year) => year > 1900 && year < 2100);
+    if (!years.length) return null;
+    return make(String(Math.max(1, new Date().getFullYear() - Math.min(...years))));
+  }
+  if (/\b(school|university|college|institution)\b/.test(label) && !label.includes("hear")) {
+    return latestSchool?.school ? make(latestSchool.school) : null;
+  }
+  if (label.includes("graduation") && label.includes("year")) {
+    return latestSchool?.endYear ? make(latestSchool.endYear) : null;
+  }
   if (
     /you/.test(key) &&
     /(reside|residing|live|living) in/.test(key) &&
@@ -205,7 +237,7 @@ export function deterministicMap(
   if (label.includes("additional information") || label.includes("anything else")) {
     return profile.additionalInfo ? make(profile.additionalInfo, "medium") : null;
   }
-  if (label.includes("school") && question.section === "education") {
+  if (label.includes("school")) {
     return profile.educations[0]?.school ? make(profile.educations[0].school) : null;
   }
   if (label.includes("degree")) {
@@ -230,7 +262,7 @@ export async function mapQuestions(params: {
 }): Promise<MappedAnswer[]> {
   const mapped: MappedAnswer[] = [];
   const leftover: FormQuestion[] = [];
-  const bank = listAnswers(params.profile.id);
+  const bank = await listAnswers(params.profile.id);
 
   for (const question of params.questions) {
     const hit = deterministicMap(question, params.profile, bank);

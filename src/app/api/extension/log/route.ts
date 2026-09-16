@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
   const body = await request.json();
   const id = String(body.id || "");
   if (id) {
-    updateApplication(id, {
+    await updateApplication(id, {
       status: body.status,
       error: body.error || null,
       confirmationUrl: body.confirmationUrl || null,
@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     });
     return cors(Response.json({ ok: true, id }));
   }
-  const app = createApplication({
+  const app = await createApplication({
     profileId: String(body.profileId || ""),
     jobUrl: String(body.jobUrl || ""),
     applyUrl: String(body.jobUrl || ""),

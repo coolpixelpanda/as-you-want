@@ -28,7 +28,17 @@ export function ResumeStart() {
       const parsed = await fetch("/api/profile/resume", { method: "POST", body: form });
       const data = await parsed.json();
       if (data.error && !data.profile) throw new Error(data.error);
-      router.push(`/profiles/${profile.id}`);
+      if (data.profile) {
+        sessionStorage.setItem(
+          `joblink-parsed-${profile.id}`,
+          JSON.stringify({
+            ...data.profile,
+            experiences: data.profile.experiences?.length ? data.profile.experiences : data.experiences || [],
+            educations: data.profile.educations?.length ? data.profile.educations : data.educations || [],
+          }),
+        );
+      }
+      router.push(`/profiles/${profile.id}#experience`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not read that resume.");
       setBusy(false);

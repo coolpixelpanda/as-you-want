@@ -18,7 +18,7 @@ export async function OPTIONS() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const saved = upsertSavedAnswer(
+    const saved = await upsertSavedAnswer(
       String(body.profileId || ""),
       String(body.question || ""),
       String(body.answer || ""),
