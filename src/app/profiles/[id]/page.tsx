@@ -18,7 +18,7 @@ export default async function EditProfilePage({
         Drop a resume to autofill this profile. You can still edit every field before you save.
       </p>
       <div className="mt-8">
-        <ProfileForm profileId={id} />
+        <ProfileForm key={id} profileId={id} />
       </div>
     </div>
   );

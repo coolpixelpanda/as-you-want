@@ -3,6 +3,7 @@ import {
   dbCreateProfile,
   dbDeleteApplication,
   dbDeleteProfile,
+  dbEnsureProfile,
   dbGetActiveProfileId,
   dbGetApplication,
   dbListApplications,
@@ -95,6 +96,11 @@ export async function readProfile(id?: string): Promise<Profile> {
     createdAt: row.updatedAt,
   }));
   return profile;
+}
+
+export async function ensureProfile(id: string, name = "New profile"): Promise<Profile> {
+  await dbEnsureProfile(id, name);
+  return readProfile(id);
 }
 
 export async function writeProfile(profile: Profile, opts?: { replaceAnswers?: boolean }) {

@@ -113,6 +113,7 @@ export function ProfileForm({ profileId }: { profileId?: string }) {
 
   function applyProfile(data: Record<string, unknown>, source: "load" | "parse" | "save" = "load") {
     if (!data || typeof data !== "object") return;
+    if (profileId && data.id && String(data.id) !== String(profileId)) return;
     const nextExp = listFrom(data, "experiences").map((row) => asExp(row as Record<string, unknown>));
     const nextEdu = listFrom(data, "educations").map((row) => asEdu(row as Record<string, unknown>));
     const nextAns = listFrom(data, "answers") as Saved[];
@@ -120,19 +121,16 @@ export function ProfileForm({ profileId }: { profileId?: string }) {
     const filledEdu = nextEdu.filter((row) => row.school);
     setProfile({
       ...data,
+      id: profileId || data.id,
       state: normalizeStateCode(String(data.state || "")),
     });
-    setExperiences((prev) => {
-      const prevFilled = prev.filter((row) => row.company || row.title);
+    setExperiences(() => {
       if (source === "parse") return filledExp.length ? filledExp : [emptyExp()];
-      if (source === "load" && prevFilled.length && !filledExp.length) return prev;
       if (filledExp.length) return filledExp;
       return [emptyExp()];
     });
-    setEducations((prev) => {
-      const prevFilled = prev.filter((row) => row.school);
+    setEducations(() => {
       if (source === "parse") return filledEdu.length ? filledEdu : [emptyEdu()];
-      if (source === "load" && prevFilled.length && !filledEdu.length) return prev;
       if (filledEdu.length) return filledEdu;
       return [emptyEdu()];
     });
@@ -141,6 +139,7 @@ export function ProfileForm({ profileId }: { profileId?: string }) {
 
   useEffect(() => {
     const gen = ++loadGen.current;
+    setStatus("");
     const cached = profileId ? sessionStorage.getItem(`joblink-parsed-${profileId}`) : "";
     if (cached) {
       try {
@@ -149,12 +148,18 @@ export function ProfileForm({ profileId }: { profileId?: string }) {
         /* ignore bad cache */
       }
       sessionStorage.removeItem(`joblink-parsed-${profileId}`);
+      loadGen.current += 1;
     }
     const ac = new AbortController();
     fetch(`/api/profile${idQuery}`, { signal: ac.signal })
-      .then((r) => r.json())
+      .then(async (r) => {
+        if (!r.ok) return null;
+        return r.json();
+      })
       .then((data) => {
+        if (!data || data.error) return;
         if (gen !== loadGen.current) return;
+        if (profileId && data.id && String(data.id) !== String(profileId)) return;
         applyProfile(data as Record<string, unknown>, "load");
       })
       .catch(() => {

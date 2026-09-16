@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { readProfile, writeProfile } from "@/lib/store";
+import { ensureProfile, readProfile, writeProfile } from "@/lib/store";
 import { dbSaveBlob } from "@/lib/database";
 import {
   extractResumeTextFromBuffer,
@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "No file uploaded" }, { status: 400 });
   }
 
-  const profile = await readProfile(profileId || undefined);
+  const profile = profileId ? await ensureProfile(profileId) : await readProfile();
   const buffer = Buffer.from(await file.arrayBuffer());
   const saved = await dbSaveBlob({
     profileId: profile.id,

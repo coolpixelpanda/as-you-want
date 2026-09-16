@@ -239,8 +239,27 @@ export async function dbSetActiveProfile(id: string) {
 
 export async function dbReadProfile(id?: string): Promise<Profile> {
   const profiles = await dbListProfiles();
-  const activeId = id || (await dbGetActiveProfileId());
+  if (id) {
+    const found = profiles.find((row) => row.id === id);
+    if (!found) {
+      const error = new Error("PROFILE_NOT_FOUND");
+      error.name = "ProfileNotFound";
+      throw error;
+    }
+    return found;
+  }
+  const activeId = await dbGetActiveProfileId();
   return profiles.find((row) => row.id === activeId) || profiles[0];
+}
+
+export async function dbEnsureProfile(id: string, name = "New profile"): Promise<Profile> {
+  const profiles = await dbListProfiles();
+  const found = profiles.find((row) => row.id === id);
+  if (found) return found;
+  const profile = defaultProfile({ id, name });
+  await dbWriteProfile(profile);
+  await dbSetActiveProfile(profile.id);
+  return dbReadProfile(profile.id);
 }
 
 export async function dbCreateProfile(name = "New profile"): Promise<Profile> {

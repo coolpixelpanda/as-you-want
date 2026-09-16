@@ -16,7 +16,15 @@ export const maxDuration = 60;
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
   const profileId = String((body as { profileId?: string }).profileId || "");
-  const profile = await readProfile(profileId || undefined);
+  let profile;
+  try {
+    profile = await readProfile(profileId || undefined);
+  } catch (error) {
+    if (error instanceof Error && error.name === "ProfileNotFound") {
+      return Response.json({ error: "Profile not found" }, { status: 404 });
+    }
+    throw error;
+  }
   if (!profile.resumePath && !profile.resumeText) {
     return Response.json({ error: "Upload a resume first." }, { status: 400 });
   }

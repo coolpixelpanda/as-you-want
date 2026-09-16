@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { mergeLatestAnswers } from "@/lib/answers-db";
-import { newId, readProfile, writeProfile, type Education, type Experience, type Profile, type SavedAnswer } from "@/lib/store";
+import { ensureProfile, newId, readProfile, writeProfile, type Education, type Experience, type Profile, type SavedAnswer } from "@/lib/store";
 
 export const runtime = "nodejs";
 
@@ -65,14 +65,29 @@ function applyBody(current: Profile, body: Record<string, unknown>): Profile {
 
 export async function GET(request: NextRequest) {
   const id = request.nextUrl.searchParams.get("id") || undefined;
-  return Response.json(await readProfile(id));
+  try {
+    return Response.json(await readProfile(id));
+  } catch (error) {
+    if (error instanceof Error && error.name === "ProfileNotFound") {
+      return Response.json({ error: "Profile not found", id }, { status: 404 });
+    }
+    throw error;
+  }
 }
 
 export async function PUT(request: NextRequest) {
   const id = request.nextUrl.searchParams.get("id") || undefined;
   const body = (await request.json()) as Record<string, unknown>;
-  const current = await readProfile(id);
-  const next = applyBody(current, body);
-  await writeProfile(next, { replaceAnswers: true });
-  return Response.json({ ok: true, profile: await readProfile(next.id), id: next.id });
+  try {
+    const current = id ? await ensureProfile(id) : await readProfile();
+    const next = applyBody(current, body);
+    next.id = current.id;
+    await writeProfile(next, { replaceAnswers: true });
+    return Response.json({ ok: true, profile: await readProfile(next.id), id: next.id });
+  } catch (error) {
+    if (error instanceof Error && error.name === "ProfileNotFound") {
+      return Response.json({ error: "Profile not found", id }, { status: 404 });
+    }
+    throw error;
+  }
 }
