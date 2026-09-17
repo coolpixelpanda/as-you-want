@@ -61,3 +61,13 @@ export function normalizeStateCode(value: string) {
   const byName = US_STATES.find((row) => row.name.toLowerCase() === text.toLowerCase());
   return byName?.code || text;
 }
+
+export function stateName(code: string) {
+  const normalized = normalizeStateCode(code);
+  return US_STATES.find((row) => row.code === normalized)?.name || code;
+}
+
+export function formatLocationLine(city: string, state: string, country = "United States") {
+  const named = stateName(state);
+  return [city, named, country || "United States"].filter(Boolean).join(", ");
+}

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { LoaderCircle, Plus, RefreshCw, Save, Trash2, Upload } from "lucide-react";
-import { US_STATES, normalizeStateCode } from "@/lib/us-states";
+import { US_STATES, formatLocationLine, normalizeStateCode } from "@/lib/us-states";
 import { Button } from "@/components/ui/Button";
 import { useNotice } from "@/components/NoticeProvider";
 
@@ -112,7 +112,13 @@ export function ProfileForm({ profileId }: { profileId?: string }) {
   const [saving, setSaving] = useState(false);
   const [parsing, setParsing] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [streetHits, setStreetHits] = useState<{ street: string; city: string; state: string; postalCode: string; country: string; label: string }[]>([]);
+  const [zipOptions, setZipOptions] = useState<string[]>([]);
+  const [lookingUp, setLookingUp] = useState(false);
+  const [streetFocused, setStreetFocused] = useState(false);
   const loadGen = useRef(0);
+  const streetTimer = useRef<number>(0);
+  const streetLookup = useRef(0);
 
   const idQuery = profileId ? `?id=${encodeURIComponent(profileId)}` : "";
 
@@ -173,8 +179,67 @@ export function ProfileForm({ profileId }: { profileId?: string }) {
     return () => ac.abort();
   }, [idQuery, profileId]);
 
+  useEffect(() => {
+    return () => window.clearTimeout(streetTimer.current);
+  }, []);
+
+  function applyLocation(part: Record<string, unknown>) {
+    setProfile((prev) => {
+      const next = { ...(prev || {}), ...part };
+      if (part.state !== undefined) next.state = normalizeStateCode(String(part.state || ""));
+      next.locationLine = formatLocationLine(String(next.city || ""), String(next.state || ""), String(next.country || "United States"));
+      return next;
+    });
+  }
+
   function set(key: string, value: unknown) {
+    if (key === "city" || key === "state" || key === "country") {
+      applyLocation({ [key]: value });
+      return;
+    }
     setProfile((p) => ({ ...(p || {}), [key]: value }));
+  }
+
+  async function lookupStreet(query: string) {
+    const text = query.trim();
+    const request = ++streetLookup.current;
+    if (text.length < 5) {
+      setStreetHits([]);
+      setLookingUp(false);
+      return;
+    }
+    setLookingUp(true);
+    try {
+      const res = await fetch(`/api/profile/address?q=${encodeURIComponent(text)}`, { cache: "no-store" });
+      const data = await res.json();
+      if (request !== streetLookup.current) return;
+      const suggestions = Array.isArray(data.suggestions) ? data.suggestions : [];
+      setStreetHits(suggestions);
+      const zips = Array.isArray(data.postalCodes) ? data.postalCodes.filter(Boolean) : [];
+      setZipOptions(zips);
+    } catch {
+      if (request !== streetLookup.current) return;
+      setStreetHits([]);
+    } finally {
+      if (request === streetLookup.current) setLookingUp(false);
+    }
+  }
+
+  function onStreetChange(value: string) {
+    set("street", value);
+    window.clearTimeout(streetTimer.current);
+    streetTimer.current = window.setTimeout(() => void lookupStreet(value), 400);
+  }
+
+  function pickStreet(hit: { city: string; state: string; postalCode: string; country: string }) {
+    applyLocation({
+      city: hit.city,
+      state: hit.state,
+      postalCode: hit.postalCode,
+      country: hit.country || "United States",
+    });
+    setStreetHits([]);
+    if (hit.postalCode) setZipOptions((rows) => (rows.includes(hit.postalCode) ? rows : [...rows, hit.postalCode]));
   }
 
   async function upload(kind: "resume" | "cover" | "tailored", file: File) {
@@ -267,6 +332,7 @@ export function ProfileForm({ profileId }: { profileId?: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...profile,
+          locationLine: formatLocationLine(String(profile.city || ""), String(profile.state || ""), String(profile.country || "United States")),
           experiences: experiences.filter((e) => e.company || e.title),
           educations: educations.filter((e) => e.school),
           answers: answers.filter((a) => a.question && a.answer),
@@ -419,46 +485,78 @@ export function ProfileForm({ profileId }: { profileId?: string }) {
 
       <section className="rounded-2xl border border-line bg-card p-6">
         <h2 className="font-serif text-2xl">Location</h2>
+        <p className="mt-1 text-sm text-muted">
+          You can type every field yourself. If you want help, pick a street suggestion to fill city, state, and ZIP.
+        </p>
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
-          <Field label="Street">
-            <input className={inputClass} value={String(profile.street || "")} onChange={(e) => set("street", e.target.value)} />
-          </Field>
+          <div className="sm:col-span-2">
+            <Field label="Street">
+              <input
+                className={inputClass}
+                value={String(profile.street || "")}
+                placeholder="1901 Mariposa Dr"
+                autoComplete="off"
+                spellCheck={false}
+                onChange={(e) => onStreetChange(e.target.value)}
+                onFocus={() => setStreetFocused(true)}
+                onBlur={() => window.setTimeout(() => setStreetFocused(false), 150)}
+              />
+            </Field>
+            {lookingUp ? (
+              <p className="mt-2 inline-flex items-center gap-2 text-xs text-muted">
+                <LoaderCircle className="animate-spin" size={12} /> Looking up matches
+              </p>
+            ) : null}
+            {streetFocused && streetHits.length ? (
+              <div className="mt-2 overflow-hidden rounded-xl border border-line bg-card">
+                {streetHits.map((hit) => (
+                  <button
+                    key={hit.label}
+                    type="button"
+                    className="flex w-full items-start px-3 py-2.5 text-left text-sm transition hover:bg-[#f7efe6]"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => pickStreet(hit)}
+                  >
+                    {hit.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
           <Field label="City">
-            <input className={inputClass} value={String(profile.city || "")} onChange={(e) => set("city", e.target.value)} />
+            <input className={inputClass} value={String(profile.city || "")} autoComplete="address-level2" onChange={(e) => set("city", e.target.value)} />
           </Field>
           <Field label="State">
-            <select
-              className={inputClass}
-              value={normalizeStateCode(String(profile.state || ""))}
-              onChange={(e) => {
-                const code = e.target.value;
-                const named = US_STATES.find((row) => row.code === code);
-                set("state", code);
-                const city = String(profile.city || "");
-                if (city && named) set("locationLine", `${city}, ${named.name}, United States`);
-              }}
-            >
+            <select className={inputClass} value={normalizeStateCode(String(profile.state || ""))} onChange={(e) => set("state", e.target.value)}>
               <option value="">Select a state</option>
               {US_STATES.map((row) => (
                 <option key={row.code} value={row.code}>
                   {row.name}
                 </option>
               ))}
+              {profile.state && !US_STATES.some((row) => row.code === normalizeStateCode(String(profile.state))) ? (
+                <option value={String(profile.state)}>{String(profile.state)}</option>
+              ) : null}
             </select>
           </Field>
           <Field label="Postal code">
-            <input className={inputClass} value={String(profile.postalCode || "")} onChange={(e) => set("postalCode", e.target.value)} />
-          </Field>
-          <Field label="Country">
-            <input className={inputClass} value={String(profile.country || "")} onChange={(e) => set("country", e.target.value)} />
-          </Field>
-          <Field label="Location line (city typeaheads)">
             <input
               className={inputClass}
-              placeholder="Austin, Texas, United States"
-              value={String(profile.locationLine || "")}
-              onChange={(e) => set("locationLine", e.target.value)}
+              value={String(profile.postalCode || "")}
+              list={zipOptions.length ? "postal-code-options" : undefined}
+              autoComplete="postal-code"
+              onChange={(e) => set("postalCode", e.target.value)}
             />
+            {zipOptions.length ? (
+              <datalist id="postal-code-options">
+                {zipOptions.map((zip) => (
+                  <option key={zip} value={zip} />
+                ))}
+              </datalist>
+            ) : null}
+          </Field>
+          <Field label="Country">
+            <input className={inputClass} value={String(profile.country || "")} autoComplete="country-name" onChange={(e) => set("country", e.target.value)} />
           </Field>
         </div>
       </section>

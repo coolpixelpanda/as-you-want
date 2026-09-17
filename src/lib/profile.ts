@@ -1,4 +1,5 @@
 import { readProfile, type Education, type Experience, type Profile, type SavedAnswer } from "@/lib/store";
+import { formatLocationLine } from "@/lib/us-states";
 
 export type FullProfile = Profile;
 
@@ -52,9 +53,7 @@ export function profileDossier(profile: FullProfile) {
       state: profile.state,
       postalCode: profile.postalCode,
       country: profile.country,
-      locationLine:
-        profile.locationLine ||
-        [profile.city, profile.state, profile.country].filter(Boolean).join(", "),
+      locationLine: formatLocationLine(profile.city, profile.state, profile.country),
     },
     links: {
       linkedinUrl: profile.linkedinUrl,

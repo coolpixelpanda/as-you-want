@@ -2,6 +2,7 @@ import type { FormQuestion, MappedAnswer } from "@/lib/types";
 import { getModel, getOpenAI } from "@/lib/openai";
 import { profileDossier, type FullProfile } from "@/lib/profile";
 import { type AnswerRow, findBestSavedAnswer, listAnswers } from "@/lib/answers-db";
+import { formatLocationLine } from "@/lib/us-states";
 
 function norm(s: string) {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
@@ -223,9 +224,7 @@ export function deterministicMap(
     }
   }
   if (label === "location" || label.includes("city") || name === "location") {
-    const line =
-      profile.locationLine ||
-      [profile.city, profile.state, profile.country].filter(Boolean).join(", ");
+    const line = formatLocationLine(profile.city, profile.state, profile.country) || profile.locationLine;
     return line ? make(line) : null;
   }
   if (label.includes("country") && question.section === "location") {
