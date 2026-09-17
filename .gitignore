@@ -44,3 +44,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local agent skills from Vercel/Neon install
+.agents/
+skills-lock.json
+
